@@ -1,187 +1,82 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cheng Luo - Researcher</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jiawei Zhao - Personal Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        nav {
+            text-align: right;
+        }
+        nav a {
+            margin-left: 15px;
+            text-decoration: none;
+            color: #0066cc;
+        }
+        img {
+            display: block;
+            width: 200px;
+            border-radius: 50%;
+            margin: 20px auto;
+        }
+        h1 {
+            text-align: center;
+        }
+        .news {
+            margin-top: 30px;
+        }
+        .news-item {
+            margin-bottom: 10px;
+        }
+        .date {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .social-icons {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .social-icons img {
+            width: 30px;
+            margin: 0 10px;
+            display: inline;
+        }
+    </style>
 </head>
-
 <body>
-  <header>
+    <nav>
+        <a href="#about">About</a>
+        <a href="research.html">Research</a>
+    </nav>
+
+    <img src="profile-picture.jpg" alt="Cheng Luo">
     <h1>Cheng Luo</h1>
-    <h2>Researcher</h2>
-  </header>
 
-  <nav>
-    <ul>
-      <li><a href="#about">About</a></li>
-      <li><a href="#experience">Experience</a></li>
-      <li><a href="#projects">Projects</a></li>
-      <li><a href="#skills">Skills</a></li>
-      <li><a href="#education">Education</a></li>
-      <li><a href="#publications">Publications</a></li>
-      <li><a href="#contact">Contact</a></li>
-    </ul>
-  </nav>
+    <p>I am a independent researcher focusing on LLM optimization. Before that, I was an research at <a href="https://www.microsoft.com/en-us/research/">Microsoft Research</a>. I am also collaborating with <a href="http://tensorlab.cms.caltech.edu/users/anima/"> Anima Anandkumar.</a> at Caltech, <a href="https://www.andrew.cmu.edu/user/beidic/">Beidi Chen</a> at CMU</p>
 
-  <section id="about">
-    <h2>About Me</h2>
-    <p>I am a specialized researcher in systems and network research, focusing on system simulation and distributed training.
-      My passion lies in utilizing simulation to enhance system performance in fields like satellite networks and distributed
-      machine learning.</p>
-    <p>Phone: (+1) 8586425898<br>
-      Email: wdlctc@gmail.com<br>
-      Location: San Diego, CA</p>
-  </section>
+    <p>I am interested in bridging hardware constraints with the principles of learning in neural networks. I focus on developing hardware-efficient learning algorithms that are principled and scalable for large-scale training, such as training large language models (LLMs). Check out my <a href="https://scholar.google.com/citations?user=jmCDQGoAAAAJ&hl=en">research</a> for more details.</p>
 
-  <section id="experience">
-    <h2>Experience</h2>
-    <ul>
-      <li>
-        <h3>Independent Researcher</h3>
-        <p>April 2023 - Present</p>
-        <ul>
-          <li>Played a pivotal role in the development and implementation of Rotated Tensor Parallelism (RTP), 
-            an innovative approach focusing on memory deduplication in distributed training environments.</li>
-        </ul>
-      </li>
-      <li>
-        <h3>System Researcher</h3>
-        <h4>Microsoft, Shanghai</h4>
-        <p>October 2021 - April 2023</p>
-        <ul>
-          <li>Led the development of novel algorithms for satellite selection and video bitrate optimization, utilizing model
-            predictive control, dynamic programming, and reinforcement learning.</li>
-          <li>Proposed and implemented a new scheduling algorithm for multi-talent distributed training, including co-design
-            with computation and communication for overlapping behavior.</li>
-          <li>Collaborated with Horovod to improve training performance.</li>
-          <li>Created a simulation project for distributed training solutions on large-scale clusters, leveraging high-bandwidth
-            InfiniBand and high-performance NVIDIA A100 GPU.</li>
-          <li>Developed a benchmark tool for non-intrusive, fine-grained monitoring of AI infrastructure.</li>
-        </ul>
-      </li>
-      <li>
-        <h3>Microsoft Research Intern</h3>
-        <h4>Shanghai & Beijing</h4>
-        <p>June 2019 - September 2021</p>
-        <ul>
-          <li>Proposed and simulated a carbon-focused workload scheduler, achieving a 50% reduction in carbon emissions for
-            ITP clusters.</li>
-          <li>Developed an energy predictor for AI inference workloads on GPU, CPU, and VPU platforms using PyTorch and ONNX.</li>
-          <li>Designed and implemented a new measurement tool for cloud GPU, focusing on latency, energy, and power, with
-            fine-grained access to operation and kernel details.</li>
-          <li>Implemented a high-throughput quantization algorithm for gradients communication, achieving 2x speedup using
-            IC3 and ITP.</li>
-        </ul>
-      </li>
-    </ul>
-  </section>
+    <!-- <p>Reach me at firstname at caltech dot edu</p> -->
 
-  <section id="projects">
-    <h2>Projects</h2>
-    <ul>
-      <li>
-        <h3>RTP</h3>
-        <p>Led a research project aimed at redefining tensor parallelism to address memory overhead challenges in neural network training,  
-          focuses on memory deduplication and optimal memory allocation.</p>
-        <p>demonstrating RTP's capability to achieve performance comparable to established methodologies of DDP and FSDP while supporting 
-          larger models with near-linear memory scalability.</p>
-      </li>
-      <li>
-        <h3>SuperScalar</h3>
-        <p>Innovated a new scheduling algorithm for multi-talent distributed training, optimizing system efficiency and
-          performance. Successfully co-designed computation and communication overlapping behavior to reduce system latency.</p>
-      </li>
-      <li>
-        <h3>Superbench</h3>
-        <p>Spearheaded the development of a simulation project for distributed training solutions on large-scale clusters,
-          utilizing high-bandwidth InfiniBand and high-performance NVIDIA A100 GPU. Crafted a user-friendly benchmark tool
-          for non-intrusive, fine-grained monitoring of AI infrastructure, enhancing system transparency and maintainability.</p>
-      </li>
-      <li>
-        <h3>LEOpard</h3>
-        <p>We are building a globally spanning testbed, LEOpard, to quantify these performance opportunities and bottlenecks and their impact on end-to-end transport and applications. 
-          Our initial implementation offers unique features to account for LEO dynamics, growing presence across countries, and insights that call for a broad LEO research agenda. We use LEOpard to 
-          quantify Starlink performance across countries, demonstrate the opportunity to build LEO network performance predictors, and show their utility in improving application performance.</p>
-      </li>
-    </ul>
-  </section>
+    <div class="news">
+        <h2>news</h2>
+        <div class="news-item">
+            <span class="date">Mar 07, 2024</span>
+            <a href="https://github.com/wdlctc/rtp">RTP</a> is released and try it out 🙌
+        </div>
+    </div>
 
-  <section id="skills">
-    <h2>Skills</h2>
-    <ul>
-      <li>System Design: Video server, Satellite Communication, Simulation, Benchmark, Scheduler</li>
-      <li>Software: AWS, Azure, NCCL, Nsight</li>
-      <li>Hardware: NVIDIA, AMD, Xilinx, Altera, Intel, VPU, Mobile</li>
-      <li>Programming: Python, C++, Verilog HDL</li>
-    </ul>
-  </section>
-
-  <section id="education">
-    <h2>Education</h2>
-    <ul>
-      <li>P.H.D., Master study at Fudan University (2016-2021)</li>
-      <li>Participated in exchange programs at Imperial College London and University of Sydney</li>
-    </ul>
-  </section>
-
-  <section id="publications">
-    <h2>Publications</h2>
-    <ul>
-        <li>
-            <h3>Video-Aware Mobility Management for LEO Satellite Networks</h3>
-            <p>Luo C, He Z, Kyoungjun P, et al.</p>
-            <p>Submitted to Mobicomm 2023</p>
-        </li>
-        <li>
-            <h3>Merak: An Analytical Performance Simulator for Large-scale Distributed Training</h3>
-            <p>Jiamin L, Luo C, Ziyue Y, et al.</p>
-            <p>Submitted to MLSYS 2024</p>
-        </li>
-        <li>
-            <h3>Moneo: Non-intrusive Fine-grained Monitor for AI Infrastructure</h3>
-            <p>Y Jiang, Y Xiong, L Qu, C Luo, C Tian, P Cheng, Y Xiong</p>
-            <p>Accepted by ATC 2022</p>
-            <p>Mandates: National Natural Science Foundation of China</p>
-            <p><a href="[PDF Link]">[PDF]</a> <a href="nju.edu.cn">nju.edu.cn</a></p>
-        </li>
-        <li>
-            <h3>Accelerating low bit-width convolutional neural networks with embedded FPGA</h3>
-            <p>L Jiao, C Luo, W Cao, X Zhou, L Wang</p>
-            <p>2017 27th International Conference on Field Programmable Logic and Applications (FPL), 2017</p>
-            <p>Mandates: National Natural Science Foundation of China</p>
-            <p>Available somewhere: 4</p>
-            <p><a href="[PDF Link]">[PDF]</a> <a href="imperial.ac.uk">imperial.ac.uk</a></p>
-        </li>
-        <li>
-            <h3>F-E3D: FPGA-based acceleration of an efficient 3D convolutional neural network for human action recognition</h3>
-            <p>H Fan, C Luo, C Zeng, M Ferianc, Z Que, S Liu, X Niu, W Luk</p>
-            <p>2019 IEEE 30th International Conference on Application-specific Systems, Architectures and Processors (ASAP), 2019</p>
-            <p>Mandates: UK Engineering and Physical Sciences Research Council</p>
-            <p><a href="[PDF Link]">[PDF]</a> <a href="jst.go.jp">jst.go.jp</a></p>
-        </li>
-        <li>
-            <h3>Rna: An accurate residual network accelerator for quantized and reconstructed deep neural networks</h3>
-            <p>C Luo, W Cao, L Wang, PHW Leong</p>
-            <p>IEICE TRANSACTIONS on Information and Systems 102 (5), 1037-1045, 2019</p>
-            <p>Mandates: Australian Research Council</p>
-            <p><a href="[PDF Link]">[PDF]</a> <a href="github.io">github.io</a></p>
-        </li>
-    </ul>
-</section>
-
-  <section id="contact">
-    <h2>Contact Me</h2>
-    <p>If you have any inquiries or would like to collaborate, feel free to reach out to me:</p>
-    <ul>
-      <li>Email: wdlctc@gmail.com</li>
-      <li>Phone: (+1) 8586425898</li>
-    </ul>
-  </section>
-
-  <script src="script.js"></script>
+    <div class="social-icons">
+        <a href="#"><img src="google-scholar-icon.png" alt="Google Scholar"></a>
+        <a href="#"><img src="github-icon.png" alt="GitHub"></a>
+        <a href="#"><img src="twitter-icon.png" alt="Twitter"></a>
+    </div>
 </body>
-
 </html>
