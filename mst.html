@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cheng Luo - MINI-SEQUENCE TRANSFORMER (MST)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        nav {
+            text-align: right;
+            margin-bottom: 20px;
+        }
+        nav a {
+            margin-left: 15px;
+            text-decoration: none;
+            color: #0066cc;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .highlight {
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About</a>
+        <a href="research.html">Research</a>
+    </nav>
+
+    <h1>MINI-SEQUENCE TRANSFORMER (MST)</h1>
+
+    <div class="section">
+        <h2>Overview</h2>
+        <p>MINI-SEQUENCE TRANSFORMER (MST) is a simple and effective method for highly efficient and accurate LLM training with extremely long sequences. Our research demonstrates that the Llama3-8B model can be trained with context lengths up to 60k tokens on a single NVIDIA A100 GPU with 80GB memory, representing a 12x increase in maximum sequence length compared to standard implementations.</p>
+        <p>We believe that our work opens new avenues for long-sequence training of LLMs, and reduces the hardware obstacles for researchers and developers aiming to create LLMs with long context. We have open sourced the code under a permissive license. <a href="https://github.com/wdlctc/mini-s">github</a></p>
+        <img src="mst.png" alt="mst Image">
+    </div>
+
+    
+
+    <div class="section">
+        <h2>Key Features</h2>
+        <ul>
+            <li>Enables training Llama3-8B with 60k token sequences on a single A100 GPU (4x longer than activation recomputation alone)</li>
+            <li>Maintains the same training throughput as standard implementations</li>
+            <li>Fully general and implementation-agnostic, supporting most parameter-efficient training methods</li>
+            <li>Easy to integrate into existing training frameworks with minimal code changes</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>How It Works</h2>
+        <p>MST partitions input sequences and iteratively processes mini-sequences to reduce intermediate memory usage. When integrated with activation recomputation, this allows for significant memory savings in both forward and backward passes.</p>
+    </div>
+
+    <div class="section">
+        <h2>Benefits</h2>
+        <p class="highlight">MST opens up new possibilities for training LLMs on long sequences using limited hardware resources:</p>
+        <ul>
+            <li>Enables efficient training on much longer sequences</li>
+            <li>Improves LLM capabilities across tasks that benefit from extended context, like long document summarization and multi-turn dialogue</li>
+            <li>Requires no changes to model architecture, making it broadly applicable to a wide range of existing and future transformer models</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Experimental Results</h2>
+        <p>We evaluated MST on popular models like Llama3-8B and Llama2-7B. In our experiments, we observed:</p>
+        <ul>
+            <li>No degradation in convergence or throughput even with 12x longer sequences compared to standard implementations</li>
+            <li>Llama3-8B can be trained with context lengths up to 60k tokens on a single NVIDIA A100 GPU</li>
+            <li>Llama2-7B can be trained with context lengths up to 84k tokens on a single NVIDIA A100 GPU</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Get Involved</h2>
+        <p>We plan to open source our code under a permissive license. If you're interested in collaborating on MST research or have questions about our work, please <a href="mailto:wdlctc@gmail.com">contact me</a>.</p>
+    </div>
+</body>
+</html>
