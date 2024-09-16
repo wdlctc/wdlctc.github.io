@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fine-tuning Large Language Models with Mini-Sequence Technology and Distributed Training</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .result {
+            background-color: #e6f3ff;
+            border-left: 4px solid #3498db;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .citation {
+            background-color: #f9f9f9;
+            border-left: 4px solid #2ecc71;
+            padding: 10px;
+            margin: 10px 0;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About me</a>
+        <a href="research.html">Research</a>
+    </nav>
+
+    <h1>Fine-tuning Large Language Models with Mini-Sequence Technology and Distributed Training</h1>
+
+    <p>In the ever-evolving landscape of artificial intelligence, training large language models (LLMs) with extended context lengths has become a critical challenge. Mini-sequence technology, introduced by Luo et al. (2024), is a game-changing approach that's pushing the boundaries of what's possible in LLM training. Today, we'll explore how to apply this innovative technique to fine-tune large language models with extended context length, and how to leverage distributed training strategies for even greater efficiency and scalability.</p>
+
+    <!-- Existing content about mini-sequence technology and its benefits -->
+
+    <h2>Practical Application: Fine-tuning with Mini-Sequence and Distributed Training</h2>
+
+    <p>Let's walk through the process of fine-tuning large language models using mini-sequence technology and various distributed training strategies. We'll use NVIDIA GPUs for this process, demonstrating the flexibility and power of our approach.</p>
+
+    <h3>Setup and Requirements</h3>
+
+    <p>Follow these steps to set up your environment:</p>
+
+    <ol>
+        <li>Clone the PEFT repository and install dependencies:
+            <pre><code>git clone https://github.com/huggingface/peft
+pip install peft
+pip install flash-attn --no-build-isolation
+pip install trl
+cd peft/examples/sft/</code></pre>
+        </li>
+        <li>Deploy the mini-sequence version of Hugging Face Transformers:
+            <pre><code>pip install -U git+https://github.com/wdlctc/transformers</code></pre>
+        </li>
+    </ol>
+
+    <h3>Distributed Training Options</h3>
+
+    <p>Mini-sequence technology can be combined with various distributed training strategies to further enhance training efficiency and scalability. Here are three popular options:</p>
+
+    <h4>1. Data Parallel (DP)</h4>
+    <p>Data Parallel training distributes the data across multiple GPUs, with each GPU processing a portion of the batch. This is a simple and effective way to scale training across multiple GPUs.</p>
+    <pre><code>sh run_peft_multigpu.sh</code></pre>
+
+    <h4>2. Fully Sharded Data Parallel (FSDP)</h4>
+    <p>FSDP is an advanced form of data parallelism that shards model parameters, gradients, and optimizer states across data parallel workers. This allows for training even larger models by efficiently utilizing GPU memory.</p>
+    <pre><code>sh run_peft_fsdp.sh</code></pre>
+
+    <h4>3. DeepSpeed</h4>
+    <p>DeepSpeed is a deep learning optimization library that provides various optimizations for training large models, including ZeRO (Zero Redundancy Optimizer) which can significantly reduce memory usage.</p>
+    <pre><code>sh run_peft_deepspeed.sh</code></pre>
+
+    <p>These distributed training options, when combined with mini-sequence technology, allow for efficient fine-tuning of large language models with extended context lengths across multiple GPUs. This combination can dramatically reduce training time and enable the use of even larger models or longer sequences.</p>
+
+    <h2>Conclusion</h2>
+
+    <p>Mini-sequence technology, coupled with distributed training strategies like DP, FSDP, and DeepSpeed, is revolutionizing the way we train and fine-tune large language models. By enabling the processing of longer context lengths while maintaining efficiency and scaling across multiple GPUs, it opens up new possibilities for creating more capable and context-aware AI systems. Whether you're a researcher pushing the boundaries of AI or a developer looking to enhance your language models, this combination of technologies provides a powerful toolkit for advancing the state of the art in natural language processing.</p>
+
+    <p>As we continue to explore the frontiers of AI, techniques like mini-sequence and distributed training will play a crucial role in unlocking the full potential of large language models. Stay tuned for more developments in this exciting field!</p>
+
+    <h2>References</h2>
+
+    <div class="citation">
+        Luo, C., Zhao, J., Chen, Z., Chen, B., & Anandkumar, A. (2024). MINI-SEQUENCE TRANSFORMER: Optimizing Intermediate Memory for Long Sequences Training. <em>arXiv preprint arXiv:2407.15892</em>.
+    </div>
+
+    <p>For more details on the mini-sequence technology, please refer to the original paper:</p>
+
+    <pre><code>@misc{luo2024mst,
+      title={MINI-SEQUENCE TRANSFORMER: Optimizing Intermediate Memory for Long Sequences Training}, 
+      author={Luo, Cheng and Zhao, Jiawei and Chen, Zhuoming and Chen, Beidi and Anandkumar, Anima},
+      year={2024},
+      eprint={2407.15892},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC}
+}</code></pre>
+</body>
+</html>
