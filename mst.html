@@ -12,28 +12,49 @@
             padding: 20px;
             line-height: 1.6;
         }
-        nav {
-            text-align: right;
-            margin-bottom: 20px;
-        }
-        nav a {
-            margin-left: 15px;
-            text-decoration: none;
-            color: #0066cc;
-        }
-        h1, h2 {
+
+        h1,
+        h2,
+        h3 {
             color: #333;
         }
-        .section {
-            margin-bottom: 30px;
-        }
-        .highlight {
-            background-color: #f0f0f0;
-            padding: 10px;
-            border-radius: 5px;
-        }
+
         ul {
             padding-left: 20px;
+        }
+
+        code {
+            background-color: #f0f0f0;
+            padding: 2px 4px;
+            font-size: 0.95em;
+            border-radius: 4px;
+        }
+
+        pre {
+            background-color: #f0f0f0;
+            padding: 10px;
+            overflow-x: auto;
+            border-radius: 5px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .note {
+            background-color: #e7f3fe;
+            padding: 10px;
+            border-left: 4px solid #2196F3;
+            margin-bottom: 20px;
         }
     </style>
 </head>
@@ -48,252 +69,271 @@
     <p> Transformers have revolutionized natural language processing and continue to push the boundaries of what's possible in AI. However, as these models grow in size and capability, they face increasing challenges in handling long sequences during training. The memory demands for processing extended contexts can quickly overwhelm even high-end GPUs, limiting our ability to train on lengthy inputs that are critical for tasks like long-form document understanding, extended conversations, and multimodal reasoning.</p>
 
     <div class="section">
-        <h2>Background</h2>
+        <h2>Understanding the Transformer Architecture</h2>
+        <p> To grasp where these challenges come from, let's simplify the architecture of a transformer model like
+            <strong>Llama</strong>. Essentially, Llama is built from a stack of identical units called <em>transformer
+                blocks</em>. By focusing on a single transformer block, we can understand the computations involved
+            throughout the entire model. </p>
         <img src="transformer.png" alt="transformer Image">
-        <p>The diagram above illustrates the overall architecture of llama and a transformer block. Let’s simplify our understanding of llama. llama is essentially a stack of transformer blocks. Since each block has the same architecture, we’ll focus on a single transformer block. A transformer block consists of three parts: self-attention, multilayer perception (MLP) and language modeling head (LM-Head).</p>
-        <p>For simplicity, we’ll overlook some less important details related to computation and I/O, such as LayerNorm, Mask, Dropout, and residual connection. Instead, we’ll focus on tensor size in our analysis. If you want a deeper understanding of the LLAMA3 the transformer architecture or the self-attention mechanism, I recommend reading the papers and blog posts listed at the end of this article.</p>
-        <p>LLAMA models come in different sizes, ranging from 7b parameters to 70b parameters. Here’s a table outlining the hyperparameters of LLAMA2-7B and LLAMA3-8B.</p>
-        <table border="1">
+        <p>The diagram above illustrates the overall architecture of llama and a transformer block. A transformer block consists of three main components:.</p>
+        <ol>
+            <li><strong>Self-Attention</strong>: This mechanism allows the model to weigh the importance of different tokens
+                (words or subwords) in the input sequence when processing each token.</li>
+            <li><strong>Multilayer Perceptron (MLP)</strong>: A feedforward neural network that processes the output from
+                the self-attention layer to capture complex patterns.</li>
+            <li><strong>Language Modeling Head (LM-Head)</strong>: A final linear layer that maps the processed information
+                to a probability distribution over the vocabulary, helping predict the next token in a sequence.</li>
+        </ol>
+        <p> For simplicity, we'll ignore some additional components like Layer Normalization, masking, dropout, and residual
+            connections. Instead, we'll focus on the <strong>tensor shapes and sizes</strong> involved in the computations,
+            which are crucial for understanding the model's memory usage and computational requirements. </p>
+        <h2>Key Parameters of Llama Models</h2>
+        <p> Different versions of Llama have varying sizes and capabilities. Here's a table summarizing some key parameters:
+        </p>
+        <table>
             <thead>
-              <tr>
-                <th>Feature</th>
-                <th>LLAMA2-7b</th>
-                <th>LLAMA3-8b</th>
-                <th>LLAMA3.1-8b</th>
-              </tr>
+                <tr>
+                    <th>Feature</th>
+                    <th>LLAMA2-7B</th>
+                    <th>LLAMA3-8B</th>
+                    <th>LLAMA3.1-8B</th>
+                </tr>
             </thead>
             <tbody>
-            <tr>
-                <td>Layers</td>
-                <td>32</td>
-                <td>32</td>
-                <td>32</td>
-            </tr>
-              <tr>
-                <td>Hidden Length</td>
-                <td>4096</td>
-                <td>4096</td>
-                <td>4096</td>
-              </tr>
-              <tr>
-                <td>Sequence Length</td>
-                <td>4096</td>
-                <td><strong>8192</strong></td>
-                <td><strong>131072</strong></td>
-              </tr>
-              <tr>
-                <td>MLP Intermediate</td>
-                <td>11008</td>
-                <td><strong>14336</strong></td>
-                <td><strong>14336</strong></td>
-              </tr>
-              <tr>
-                <td>Vocal Length</td>
-                <td>32000</td>
-                <td><strong>128256</strong></td>
-                <td><strong>128256</strong></td>
-              </tr>
+                <tr>
+                    <td>Layers</td>
+                    <td>32</td>
+                    <td>32</td>
+                    <td>32</td>
+                </tr>
+                <tr>
+                    <td>Hidden Size (<code>d</code>)</td>
+                    <td>4096</td>
+                    <td>4096</td>
+                    <td>4096</td>
+                </tr>
+                <tr>
+                    <td>Sequence Length (<code>s</code>)</td>
+                    <td>4096</td>
+                    <td><strong>8192</strong></td>
+                    <td><strong>131072</strong></td>
+                </tr>
+                <tr>
+                    <td>MLP Intermediate Size (<code>I</code>)</td>
+                    <td>11008</td>
+                    <td><strong>14336</strong></td>
+                    <td><strong>14336</strong></td>
+                </tr>
+                <tr>
+                    <td>Vocabulary Size (<code>V</code>)</td>
+                    <td>32000</td>
+                    <td><strong>128256</strong></td>
+                    <td><strong>128256</strong></td>
+                </tr>
             </tbody>
-          </table>
-          <p> We observe that Llama3 increased its MLP intermediate size from 11k to 14k and increased its vocabulary size from 32k to 128k. Also Llama3.1 increased its sequence length from 8k to 128k</p>
-    </div>
+        </table>
+        <p><strong>Observations:</strong></p>
+        <ul>
+            <li><strong>Increased MLP Size</strong>: LLAMA3 models have a larger MLP intermediate size (<code>I</code>),
+                increasing from 11,008 to 14,336. This allows the model to capture more complex patterns but increases
+                computational demands.</li>
+            <li><strong>Larger Vocabulary</strong>: The vocabulary size (<code>V</code>) has grown from 32,000 to 128,256,
+                accommodating more words and subwords but also increasing the size of certain tensors.</li>
+            <li><strong>Longer Sequences</strong>: LLAMA3.1 supports much longer sequences (<code>s</code>), up to 131,072
+                tokens. While this enables the model to process longer inputs, it significantly increases the computational
+                load.</li>
+        </ul>
 
     
-    <div class="section">
-        <h2>Memory, FLOPS, I/O</h2>
-        <p>To enhance our understanding of a transformer block, I have created a table that lists the computation steps in a sequential manner. This allows us to read it from top to bottom, similar to executing a program.</p>
-        <p>The table provides not only the definition and input shape but also the number of FLOPs (floating point operations, i.e., the computation amount) and the number of I/O bytes (data transfer from GPU memory to GPU registers) for each block. Additionally, we define the “Intermediate Intensity” as Intermediate :Input.</p>
-        <table border="1">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Definition</th>
-                <th>Shape</th>
-                <th>FLOP</th>
-                <th>I/O</th>
-                <th>Intermediatae:Input</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td colspan="6"><strong>Scalars</strong></td>
-              </tr>
-              <tr>
-                <td colspan="6"><em>Input Shape</em></td>
-              </tr>
-              <tr>
-                <td>b</td>
-                <td>Batch size</td>
-                <td>1</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td>s</td>
-                <td>Sequence length</td>
-                <td>8192</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td colspan="6"><em>Model Hyper-parameter</em></td>
-              </tr>
-              <tr>
-                <td>d</td>
-                <td>Hidden state size</td>
-                <td>4096</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td>I</td>
-                <td>MLP intermediate size</td>
-                <td>14336</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td>V</td>
-                <td>Vocabulary size</td>
-                <td>128256</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td colspan="6"><strong>Parameters</strong></td>
-              </tr>
-              <tr>
-                <td>W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub></td>
-                <td>Projection for Q, K, V</td>
-                <td>(d, d)</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td>W<sub>O</sub></td>
-                <td>Projection for self-attention output</td>
-                <td>(d, d)</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td>W<sub>up</sub>, W<sub>gate</sub></td>
-                <td>First two layers in the MLP</td>
-                <td>(d, I)</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td>W<sub>down</sub></td>
-                <td>Second layer in the MLP</td>
-                <td>(I, d)</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td>W<sub>LM—head</sub></td>
-                <td>Linear layer in LM-head</td>
-                <td>(d, V)</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td colspan="6"><strong>Initial Computation</strong></td>
-              </tr>
-              <tr>
-                <td colspan="6"><em>Input</em></td>
-              </tr>
-              <tr>
-                <td>X</td>
-                <td>Input for self attention, MLP, LM-HEAD</td>
-                <td>(b, s, d)</td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-              <tr>
-                <td colspan="6"><em>Self-Attention</em></td>
-              </tr>
-              <tr>
-                <td>Q<sup>+</sup>, K<sup>+</sup>, V<sup>+</sup></td>
-                <td>XW<sub>Q</sub>, XW<sub>K</sub>, XW<sub>V</sub></td>
-                <td>(b, s, d)</td>
-                <td>O(bsd<sup>2</sup>)</td>
-                <td>O(2bsd + d<sup>2</sup>)</td>
-                <td>O((d + 2d/G) /d)</td>
-              </tr>
-              <tr>
-                <td colspan="6"><em>MLP</em></td>
-              </tr>
-              <tr>
-                <td>I<sub>up</sub>, I<sub>gate</sub></td>
-                <td>XW<sub>up</sub>, XW<sub>gate</sub></td>
-                <td>(b, s, I)</td>
-                <td>O(bsdI)</td>
-                <td>O(bsd + bsI + dV)</td>
-                <td>O(I/d)</td>
-              </tr>
-              <tr>
-                <td colspan="6"><em>LM-HEAD</em></td>
-              </tr>
-              <tr>
-                <td>logit</td>
-                <td>XW<sub>LM-HEAD</sub></td>
-                <td>(b, s, V)</td>
-                <td>O(bsdV)</td>
-                <td>O(bsd +bsV + dV)</td>
-                <td>O(V/d)</td>
-              </tr>
-              <!-- More rows would follow to complete the table -->
-            </tbody>
-          </table>
-          <p> Now, let’s closely examine this table together and discover some interesting insights:</p>
-          <ul>
-          <li> Memory Usage </li>
-          <ul>
-            <li> The memory used by logit is (b, s, V). This is one of the reasons why longer context lengths pose challenges, especially when V>>d on state-of-the-art LLM models like llama, gemma2, qwen, Mistral. For example, the llama3 model with 128k vocabulary size requires 33 GB of memory to store this input value for a 128k token input (128256 * 131072 * sizeof(float16)).
-            In comparison, x, as well as Q, K, V, and other hidden states, only uses b*s*d memory. In the previous example, it amounts to 1 GB (4096 * 131072 * sizeof(float16)).</li>
-            
-            <li> The memory used by LLM intermediate is 2(b, s, I).  For example, the llama3 model with 14336 intermediate size requires 7.5 GB of memory to store this input value for a 128k token input (2 * 14336 * 131072 * sizeof(float16)).
-            In comparison, x, as well as Q, K, V, and other hidden states, only uses b*s*d memory. In the previous example, it amounts to 1 GB (4096 * 131072 * sizeof(float16)).</li>
-          </ul>
+        <h2>Tensor Shapes and Their Impact on Computation</h2>
+        <p> Understanding the shapes of tensors (multi-dimensional arrays) in the model helps us identify where
+            computational challenges arise. </p>
+        <h3>Scalars and Input Shapes</h3>
+        <ul>
+            <li><strong>Batch Size (<code>b</code>)</strong>: Number of sequences processed in parallel (e.g.,
+                <code>b = 1</code>).</li>
+            <li><strong>Sequence Length (<code>s</code>)</strong>: Length of each input sequence (e.g.,
+                <code>s = 8192</code> or <code>131072</code>).</li>
+            <li><strong>Hidden Size (<code>d</code>)</strong>: Size of the hidden state vector in the model (e.g.,
+                <code>d = 4096</code>).</li>
+            <li><strong>MLP Intermediate Size (<code>I</code>)</strong>: Size of the intermediate vector in the MLP (e.g.,
+                <code>I = 14336</code>).</li>
+            <li><strong>Vocabulary Size (<code>V</code>)</strong>: Number of unique tokens the model can predict (e.g.,
+                <code>V = 128256</code>).</li>
         </ul>
-    </div>
+        <h3>Key Tensors in the Transformer Block</h3>
+        <ol>
+            <li> <strong>Input Tensor (<code>X</code>)</strong>: Shape <code>(b, s, d)</code>
+                <ul>
+                    <li>Represents the input embeddings for the sequence.</li>
+                </ul>
+            </li>
+            <li> <strong>Self-Attention Computations</strong>: <ul>
+                    <li><strong>Queries (<code>Q</code>)</strong>: Result of <code>X</code> projected by
+                        <code>W<sub>Q</sub></code>, shape <code>(b, s, d)</code></li>
+                    <li><strong>Keys (<code>K</code>)</strong>: Result of <code>X</code> projected by
+                        <code>W<sub>K</sub></code>, shape <code>(b, s, d)</code></li>
+                    <li><strong>Values (<code>V</code>)</strong>: Result of <code>X</code> projected by
+                        <code>W<sub>V</sub></code>, shape <code>(b, s, d)</code></li>
+                </ul>
+            </li>
+            <li> <strong>MLP Computations</strong>: <ul>
+                    <li><strong>Intermediate Tensors</strong>: <ul>
+                            <li><code>XW<sub>up</sub></code>: Shape <code>(b, s, I)</code></li>
+                            <li><code>XW<sub>gate</sub></code>: Shape <code>(b, s, I)</code></li>
+                        </ul>
+                    </li>
+                    <li>These are combined and transformed back to shape <code>(b, s, d)</code>.</li>
+                </ul>
+            </li>
+            <li> <strong>LM-Head Output</strong>: <ul>
+                    <li><strong>Logits (<code>logit</code>)</strong>: Result of <code>X</code> projected by
+                        <code>W<sub>LM-HEAD</sub></code>, shape <code>(b, s, V)</code></li>
+                </ul>
+            </li>
+        </ol>
+        <h3>Challenges with Large Tensors</h3>
+        <ul>
+            <li> <strong>Memory Usage</strong>: <ul>
+                    <li>The <strong>LM-Head output tensor</strong> has a shape of <code>(b, s, V)</code>. With large
+                        <code>s</code> and <code>V</code>, this tensor becomes enormous. <ul>
+                            <li>For <code>s = 131072</code> and <code>V = 128256</code>, the tensor requires over <strong>33
+                                    GB</strong> of memory just to store the logits.</li>
+                        </ul>
+                    </li>
+                    <li>The <strong>MLP intermediate tensors</strong> (<code>XW<sub>up</sub></code> and
+                        <code>XW<sub>gate</sub></code>) have shapes of <code>(b, s, I)</code>, also consuming significant
+                        memory.<ul>
+                            <li>For <code>s = 131072</code> and <code>I = 14336</code>, the tensor requires over <strong>7.5G
+                                    GB</strong> of memory just to store the intermediate.</li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+            <li> <strong>Comparison</strong>: <ul>
+                    <li>Other tensors like <code>X</code>, <code>Q</code>, <code>K</code>, and <code>V</code> have shapes
+                        <code>(b, s, d)</code>. With <code>d</code> being smaller than <code>V</code> and sometimes
+                        <code>I</code>, these tensors are relatively smaller in size of <strong>1GB</strong>. </li>
+                <li> In the early stages of transformer development, the <strong>self-attention mechanism</strong> was considered the
+                    main memory bottleneck during training. Specifically, the <code>QK^K</code> resulting in a tensor of shape <code>(b, s, s, head)</code>, where
+                    <code>h</code> is the number of attention heads.  or example, with a sequence length of 131072  tokens and 16 heads, the attention tensor would
+                    have dimensions <code>(1, 131072 , 131072 , 16)</code>, which requires <strong>550G
+                        GB</strong>.</li>
+                <li>FlashAttention optimize it the attention, make it small as <code>Q</code> with shapes
+                    <code>(b, s, d)</code> in size of <strong>1GB</strong>. That open the door of optimizing the other large tensors</li>
+                </ul>
+            </li>
+        </ul>
 
-    <div class="section">
-        <h2>Improve LLM Training</h2>
-        <p>Having gained expertise in LLM performance, let’s figure out how to enhance LLM training based on our findings.</p>
-        <h3>Partitions input sequences</h3>
-        <p> As we previously analyzed, MLP generates a intermediate value XW<sub>up</sub>, XW<sub>gate</sub> of shape 2x(b, s, I), while we only require the final result of (XW<sub>up</sub> * XW<sub>gate</sub>) * W<sub>down</sub>, which has the shape (b, s, d). Also LM-head generates a intermediate value XW<sub>LM-HEAD</sub> of shape (b, s, V), while we only require the final result of after cross-entropy, which has the shape (b, s, 1).  </p>
-        <p> Since on long sequence training S=128k like LLAMA3.1 is relatively large, we can partition the input sequences of MLP and LM-head by M of shape M*(b, s/M, d), and iteratively processes mini-sequences. With this method, the intermediate memory usage can be reduced into (b, s, I/M) and (b, s, V/M). With large M, the intermediate memory can be reduced to zero!</p>
-        <p> Thankfully, some smart people have already discovered the approach known as mini-batch training, which is deployed as <a href="https://huggingface.co/docs/accelerate/en/usage_guides/gradient_accumulation">gradient accumulation</a> on multiple library. We can try implementing this technique on sequence level and work out the necessary details. </p>
-        <p> Congratulations! We’ve essentially know the key idea of Mini-Sequence Transformers [NeurIPS’24] <a href="https://arxiv.org/abs/2407.15892">paper</a>. Additionally, I recommend checking out this awesome <a href="https://github.com/wdlctc/mini-s">repo</a> of Mini-Sequence Transformers.</p>
-    </div>
+        
+    <h2>Mini-Sequence Processing to Optimize Memory Usage</h2>
+    <p> To handle the computational challenges posed by large tensor sizes, especially with long sequences and large
+        vocabularies, we can adopt the following strategy: </p>
+    <h3>Partitioning Input Sequences</h3>
+    <ul>
+        <li> <strong>Divide the Sequence</strong>: Split the input sequence into <code>M</code> smaller chunks or
+            mini-sequences of length <code>s/M</code>. </li>
+        <li> <strong>Process Mini-Sequences Iteratively</strong>: <ul>
+                <li>Instead of processing the entire sequence at once, we process each mini-sequence one after the
+                    other.</li>
+            </ul>
+        </li>
+        <li> <strong>Reduced Tensor Sizes</strong>: <ul>
+                <li><strong>MLP Intermediate Tensors</strong>: <ul>
+                        <li>Original size: <code>(b, s, I)</code></li>
+                        <li>Reduced size: <code>(b, s/M, I)</code></li>
+                    </ul>
+                </li>
+                <li><strong>LM-Head Output Tensors</strong>: <ul>
+                        <li>Original size: <code>(b, s, V)</code></li>
+                        <li>Reduced size: <code>(b, s/M, V)</code></li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+        <li> <strong>Memory Reduction</strong>: <ul>
+                <li>By choosing a suitable <code>M</code>, we can reduce the memory required for these tensors by a
+                    factor of <code>M</code>.</li>
+                <li>With a large enough <code>M</code>, the intermediate memory usage becomes manageable.</li>
+            </ul>
+        </li>
+    </ul>
+    <p> Thankfully, some smart people have already discovered the approach similarity as mini-batch training, which is deployed as <a href="https://huggingface.co/docs/accelerate/en/usage_guides/gradient_accumulation">gradient accumulation</a> on multiple library. We can try implementing this technique on sequence level and work out the necessary details. </p>
+    <p> Congratulations! We’ve essentially know the key idea of Mini-Sequence Transformers [NeurIPS’24] <a href="https://arxiv.org/abs/2407.15892">paper</a>. Additionally, I recommend checking out this awesome <a href="https://github.com/wdlctc/mini-s">repo</a> of Mini-Sequence Transformers.</p>
 
     
     <img src="mst.png" alt="mst Image">
 
+    <h3>Example Implementation</h3>
+    <p>We have developed methods and libraries to facilitate this approach. By installling the mini-sequence wrapper <code>pip install -U https://github.com/wdlctc/mini-s</code>, you can efficiently train large transformer models with long sequences.</p>
+
+    <pre><code>
+import torch
+import os
+import time
+
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from torch.optim import AdamW
+from minis.mini_sequence import minisequence
+
+name_or_path = "meta-llama/Meta-Llama-3-8B"
+model = AutoModelForCausalLM.from_pretrained(name_or_path,
+        attn_implementation="flash_attention_2",
+        torch_dtype=torch.bfloat16,
+        trust_remote_code=True,
+    ).cuda()
+model.train()
+model = minisequence(model)
+
+optimizer = AdamW(model.parameters(), lr=5e-5)
+
+SEQ_LEN = 8192
+input_ids = torch.randint(low=3, high=10000, size=(1, SEQ_LEN), device="cuda")
+
+torch.cuda.synchronize()
+t1 = time.perf_counter()
+for _ in range(3):
+    loss = model(input_ids=input_ids, labels=input_ids).loss
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+torch.cuda.synchronize()
+t2 = time.perf_counter()
+print("Pretrains throughput {} token/s".format((SEQ_LEN/((t2 - t1)/3))))
+
+
+print(
+    "Peak allocated bytes on {:4f}GB".format(
+        torch.cuda.memory_stats(0)["allocated_bytes.all.peak"] / 2**30
+    )
+)</code></pre>
     <div class="section">
         <h2>Key Takeaway</h2>
         <ul>
-            <li>Enables training Llama3-8B with 60k token sequences on a single A100 GPU (4x longer than activation recomputation alone)</li>
-            <li>Maintains the same training throughput as standard implementations</li>
-            <li>Fully general and implementation-agnostic, supporting most parameter-efficient training methods</li>
-            <li>Llama3-8B can be trained with context lengths up to 60k tokens on a single NVIDIA A100 GPU</li>
-            <li>Llama2-7B can be trained with context lengths up to 84k tokens on a single NVIDIA A100 GPU</li>
-            <li>Easy to integrate into existing training frameworks with minimal code changes</li>
+            <li><strong>Efficient Long-Sequence Training</strong>: By partitioning sequences, models like LLAMA3-8B can be
+                trained with sequence lengths up to <strong>60k tokens</strong> on a single high-end GPU.</li>
+            <li><strong>Memory Optimization</strong>: Reduces the memory required for large intermediate tensors, addressing
+                one of the main bottlenecks in training large models.</li>
+            <li><strong>Maintains Throughput</strong>: Despite processing sequences in parts, the overall training speed
+                remains comparable to standard implementations.</li>
+            <li><strong>Easy Integration</strong>: The approach can be integrated into existing training frameworks with
+                minimal code changes, making it accessible for practitioners.</li>
+            <li><strong>General Applicability</strong>: Supports various training methods and is not limited to specific
+                model architectures or configurations.</li>
         </ul>
     </div>
-
+    <h2>Conclusion</h2>
+    <p> Understanding the tensor shapes and sizes in transformer models is crucial for identifying computational
+        challenges and optimizing training. By focusing on how the dimensions of these tensors impact memory usage,
+        especially with large sequence lengths and vocabulary sizes, we can develop strategies to make training more
+        efficient. </p>
+    <p> Partitioning input sequences and processing them as mini-sequences is an effective way to reduce memory usage
+        without sacrificing performance. This approach enables the training of large transformer models on long
+        sequences using available hardware, paving the way for advancements in natural language understanding and
+        generation tasks. </p>
+    <hr>
+    <p class="note"> <strong>Note</strong>: For those interested in implementing these techniques, tools like the
+        <strong>Mini-Sequence Transformers</strong> library are available and can be integrated into your projects to
+        facilitate efficient training on long sequences. </p>
 </body>
 </html>
