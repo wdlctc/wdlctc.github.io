@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cheng Luo - MINI-SEQUENCE TRANSFORMER (MST)</title>
+    <script id="MathJax-script" async
+      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+    </script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -12,49 +15,48 @@
             padding: 20px;
             line-height: 1.6;
         }
-
-        h1,
-        h2,
-        h3 {
+        h1, h2, h3 {
             color: #333;
         }
-
         ul {
             padding-left: 20px;
         }
-
         code {
             background-color: #f0f0f0;
             padding: 2px 4px;
             font-size: 0.95em;
             border-radius: 4px;
         }
-
         pre {
             background-color: #f0f0f0;
             padding: 10px;
             overflow-x: auto;
             border-radius: 5px;
         }
-
         table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 30px;
         }
-
-        th,
-        td {
+        th, td {
             border: 1px solid #ccc;
             padding: 8px;
             text-align: left;
         }
-
         .note {
             background-color: #e7f3fe;
             padding: 10px;
             border-left: 4px solid #2196F3;
             margin-bottom: 20px;
+        }
+        .theorem {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-left: 4px solid #4CAF50;
+            margin-bottom: 20px;
+        }
+        .theorem-title {
+            font-weight: bold;
         }
     </style>
 </head>
@@ -263,6 +265,44 @@
 
     
     <img src="mst.png" alt="mst Image">
+
+    <h3>Sequence Extension</h3>
+    Let's dive into the details of how optimized intermediate memory usage enables training on long sequences.
+
+    <div class="theorem">
+        <p class="theorem-title">Theorem: Sequence Extension</p>
+        <p>
+            Mini-Sequence Transformers (MST) can reduce intermediate memory usage by a factor of <code>M</code>. The total memory occupation becomes:
+        </p>
+        <p style="text-align: center;">
+            $$\text{Memory} = W_{\text{mem}} + S \times \left( \dfrac{I_{\text{mem}}}{M} + \sqrt{L} \times A_{\text{mem}} \right),$$
+        </p>
+        <p>
+            where:
+        </p>
+        <ul>
+            <li><code>W<sub>mem</sub></code> is the memory occupied by the model weights.</li>
+            <li><code>S</code> is the sequence length.</li>
+            <li><code>I<sub>mem</sub></code> is the memory per token for intermediate computations in the MLP and LM-Head.</li>
+            <li><code>L</code> is the number of layers.</li>
+            <li><code>A<sub>mem</sub></code> is the memory per token per layer for attention.</li>
+        </ul>
+        <p>
+            For a GPU with maximum memory <code>M<sub>max</sub></code>, the maximum sequence length is:
+        </p>
+        <p style="text-align: center;">
+            $$S_{\text{max}} = \dfrac{M_{\text{max}} - W_{\text{mem}}}{\dfrac{I_{\text{mem}}}{M} + \sqrt{L} \times A_{\text{mem}}},$$
+        </p>
+        <p>
+            which is significantly longer than the standard implementation, where the maximum sequence length is:
+        </p>
+        <p style="text-align: center;">
+            $$S_{\text{max}} = \dfrac{M_{\text{max}} - W_{\text{mem}}}{I_{\text{mem}} + L \times A_{\text{mem}}}.$$
+        </p>
+        <p>
+            This demonstrates that by reducing the intermediate memory with MST, we can train models with much longer sequences within the same memory constraints.
+        </p>
+    </div>
 
     <h3>Example Implementation</h3>
     <p>We have developed methods and libraries to facilitate this approach. By installling the mini-sequence wrapper <code>pip install -U https://github.com/wdlctc/mini-s</code>, you can efficiently train large transformer models with long sequences.</p>
