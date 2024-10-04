@@ -272,7 +272,7 @@
     <div class="theorem">
         <p class="theorem-title">Theorem: Sequence Extension</p>
         <p>
-            Mini-Sequence Transformers (MST) can reduce intermediate memory usage by a factor of <code>M</code>. The total memory occupation becomes:
+            Mini-Sequence Transformers (MST) can reduce intermediate memory usage by a factor of <code>M</code>. Working together with gradient checkpoint The total memory occupation becomes:
         </p>
         <p style="text-align: center;">
             $$\text{Memory} = W_{\text{mem}} + S \times \left( \dfrac{I_{\text{mem}}}{M} + \sqrt{L} \times A_{\text{mem}} \right),$$
@@ -292,6 +292,12 @@
         </p>
         <p style="text-align: center;">
             $$S_{\text{max}} = \dfrac{M_{\text{max}} - W_{\text{mem}}}{\dfrac{I_{\text{mem}}}{M} + \sqrt{L} \times A_{\text{mem}}},$$
+        </p>
+        <p>
+            Going a step further, when we combine it with CPU offload technology:
+        </p>
+        <p style="text-align: center;">
+            $$S_{\text{max}} = \dfrac{M_{\text{max}} - W_{\text{mem}}}{\dfrac{I_{\text{mem}}}{M} + A_{\text{mem}}},$$
         </p>
         <p>
             which is significantly longer than the standard implementation, where the maximum sequence length is:
