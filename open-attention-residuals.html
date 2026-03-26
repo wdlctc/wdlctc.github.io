@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Attention Residuals: Replacing Additive Residuals with Learned Cross-Layer Attention</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        h1 { font-size: 1.8em; }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .result {
+            background-color: #e6f3ff;
+            border-left: 4px solid #3498db;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .key-finding {
+            background-color: #eafaf1;
+            border-left: 4px solid #2ecc71;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .warning {
+            background-color: #fdf2e9;
+            border-left: 4px solid #e67e22;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .citation {
+            background-color: #f9f9f9;
+            border-left: 4px solid #95a5a6;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        tr:nth-child(even) { background-color: #fafafa; }
+        img {
+            max-width: 100%;
+            height: auto;
+            margin: 15px 0;
+        }
+        .authors {
+            color: #666;
+            font-style: italic;
+            margin-bottom: 20px;
+        }
+        .links a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #0066cc;
+            font-weight: bold;
+        }
+        .links {
+            margin-bottom: 25px;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About</a>
+        <a href="research.html">Research</a>
+        <a href="blogs.html">Blogs</a>
+    </nav>
+
+    <h1>Open Attention Residuals: Replacing Additive Residuals with Learned Cross-Layer Attention</h1>
+
+    <p class="authors">Cheng Luo, Zefan Cai &mdash; March 2025</p>
+
+    <div class="links">
+        <a href="https://github.com/wdlctc/open-attention-residuals">Code</a>
+        <a href="https://huggingface.co/wdlctc/open-attnres-block">Pretrained Weights</a>
+        <a href="https://arxiv.org/abs/2603.15031">Original Paper (Kimi Team)</a>
+    </div>
+
+    <h2>TL;DR</h2>
+
+    <p>We provide an open-source implementation of <strong>Attention Residuals</strong> (Kimi Team, 2025) and systematically evaluate them on Qwen3-architecture models. Standard transformers use simple additive residual connections; Attention Residuals replace these with a learned softmax attention over previous layer representations, allowing each layer to selectively retrieve information from any earlier layer.</p>
+
+    <div class="key-finding">
+        <strong>Key result:</strong> Training a 0.6B-parameter model from scratch, Block Attention Residuals reduce training loss by <strong>0.058</strong> and WikiText-2 perplexity by <strong>7.7%</strong>, adding only <strong>0.03%</strong> extra parameters.
+    </div>
+
+    <h2>What Are Attention Residuals?</h2>
+
+    <p>In a standard transformer, the residual connection at each layer is a simple addition:</p>
+
+    <pre><code>h = h + Attention(Norm(h))
+h = h + MLP(Norm(h))</code></pre>
+
+    <p>Every layer can only see the cumulative sum of all previous layers' outputs. A deep layer cannot selectively access the representation from, say, layer 3 without also including the modifications from layers 4 through N-1.</p>
+
+    <p><strong>Attention Residuals</strong> replace this additive shortcut with a learned depth-wise attention mechanism. Layers are grouped into blocks, and before each sublayer, the model attends over all previous block representations to decide what information to retrieve:</p>
+
+    <pre><code>def block_attn_res(blocks, partial_block, proj, norm):
+    V = torch.stack(blocks + [partial_block])     # (N+1, B, T, D)
+    K = norm(V)                                    # RMSNorm keys
+    query = proj.weight.view(-1)                   # learned query (D,)
+    logits = einsum("d, n b t d -> n b t", query, K)
+    weights = softmax(logits, dim=0)               # (N+1, B, T)
+    return einsum("n b t, n b t d -> b t d", weights, V)</code></pre>
+
+    <p>This allows each layer to selectively attend to specific earlier blocks &mdash; similar to how standard attention operates over token positions, but applied across the network's depth.</p>
+
+    <h2>Two Modes: Block vs Full</h2>
+
+    <table>
+        <tr><th>Mode</th><th>Sources</th><th>Description</th></tr>
+        <tr><td><strong>Block AttnRes</strong></td><td>N blocks (~4-8)</td><td>Layers grouped into blocks; attend over block-level summaries</td></tr>
+        <tr><td><strong>Full AttnRes</strong></td><td>All sublayer outputs</td><td>Every sublayer output is a source; finest-grained routing</td></tr>
+    </table>
+
+    <h2>Experiment 1: Training from Scratch</h2>
+
+    <p>We train a ~100M model (d=512, L=12) from scratch on FineWeb-Edu for 20k steps with identical hyperparameters across three variants: standard residual baseline, Block AttnRes (4 blocks), and Full AttnRes (per-sublayer).</p>
+
+    <img src="attnres_training_loss.png" alt="Training loss curves: baseline vs block vs full AttnRes">
+
+    <table>
+        <tr><th>Model</th><th>Train Loss</th><th>WikiText-2 PPL</th><th>LAMBADA Acc</th><th>HellaSwag Acc</th></tr>
+        <tr><td>Baseline</td><td>3.523</td><td>76.76</td><td>0.076</td><td>0.315</td></tr>
+        <tr style="background-color: #eafaf1;"><td><strong>Block AttnRes</strong></td><td><strong>3.489</strong></td><td><strong>70.82</strong></td><td>0.084</td><td><strong>0.340</strong></td></tr>
+        <tr><td>Full AttnRes</td><td>3.502</td><td>72.70</td><td><strong>0.102</strong></td><td>0.305</td></tr>
+    </table>
+
+    <div class="key-finding">
+        <strong>Block AttnRes reduces WikiText-2 perplexity by 7.7%</strong> (76.76 &rarr; 70.82) with only 0.03% additional parameters. Full AttnRes also improves but is less effective at this scale.
+    </div>
+
+    <p>We also ran this experiment at 0.6B scale (d=1024, L=28, same architecture as Qwen3-0.6B):</p>
+
+    <table>
+        <tr><th>Model (0.6B, 20k steps)</th><th>Train Loss</th><th>Improvement</th></tr>
+        <tr><td>Baseline</td><td>3.303</td><td>&mdash;</td></tr>
+        <tr style="background-color: #eafaf1;"><td><strong>Block AttnRes (8 blocks)</strong></td><td><strong>3.245</strong></td><td><strong>-0.058</strong></td></tr>
+    </table>
+
+    <h3>Why Block Beats Full</h3>
+
+    <p>Block AttnRes consistently outperforms Full AttnRes. The reason: with 4 blocks of 3 layers each, each block accumulates multiple layers of computation, creating <strong>meaningfully distinctive representations</strong> to attend over. Full AttnRes has many individual sublayer outputs that differ by only one small residual update &mdash; the signal-to-noise ratio for the softmax routing is worse.</p>
+
+    <h2>Visualizing Layer Dependencies</h2>
+
+    <p>We visualize the learned softmax weights to see how layers route information across depth. Each row is a sublayer (Attn/MLP alternating), each column is a source (earlier block or sublayer output). Brighter = higher attention weight.</p>
+
+    <h3>Block AttnRes (4 blocks, trained from scratch)</h3>
+    <img src="attnres_block_deps.png" alt="Block AttnRes layer dependencies">
+
+    <p>Rich cross-block attention patterns: layers selectively attend to specific earlier blocks, not just the most recent one. The embedding (Block 0) receives significant attention from many layers.</p>
+
+    <h3>Full AttnRes (per-sublayer, trained from scratch)</h3>
+    <img src="attnres_layer_deps.png" alt="Full AttnRes layer dependencies">
+
+    <p>Smooth triangular growth (1 source per sublayer). The model learns genuine cross-layer connections but the attention is more diffuse across the many similar sources.</p>
+
+    <h2>Experiment 2: Fine-tuning Pretrained Models</h2>
+
+    <p>We also applied AttnRes to pretrained Qwen3 models (0.6B and 1.7B) via continued pretraining on FineWeb-Edu for 10k steps. This is a harder setting because the pretrained weights are already optimized for standard residual connections.</p>
+
+    <table>
+        <tr><th>Model</th><th>Method</th><th>Final Loss</th><th>vs Baseline</th></tr>
+        <tr><td>Qwen3-0.6B</td><td>Baseline (continued pretraining)</td><td>2.571</td><td>&mdash;</td></tr>
+        <tr><td>Qwen3-0.6B</td><td>Block AttnRes (bias=0 frozen)</td><td>2.550</td><td>-0.021</td></tr>
+        <tr><td>Qwen3-0.6B</td><td>Full AttnRes (bias=0 frozen)</td><td>2.549</td><td>-0.022</td></tr>
+        <tr><td>Qwen3-1.7B</td><td>Baseline</td><td>2.343</td><td>&mdash;</td></tr>
+        <tr><td>Qwen3-1.7B</td><td>Block AttnRes (bias=3 learnable)</td><td>2.340</td><td>-0.003</td></tr>
+    </table>
+
+    <div class="warning">
+        <strong>Fine-tuning gains are much smaller</strong> (-0.02 vs -0.06 from scratch). The pretrained model's representations are already committed to standard residual flow. When we visualize the learned weights, the attention collapses to the diagonal (most recent layer), meaning the model barely uses cross-layer routing.
+    </div>
+
+    <img src="attnres_finetune_loss.png" alt="Fine-tuning loss curves comparison">
+
+    <h3>What We Tried to Improve Fine-tuning</h3>
+
+    <table>
+        <tr><th>Approach</th><th>Result</th></tr>
+        <tr><td>Learnable recency bias (init=3, 5, 10)</td><td>Model increases bias during training, escaping back to standard residual</td></tr>
+        <tr><td>Sigmoid scalar gate (init=-10)</td><td>Gate stuck at 0 due to sigmoid saturation</td></tr>
+        <tr><td>Frozen base + AttnRes only</td><td>Loss 2.75 &mdash; AttnRes alone can't compensate for disrupted inputs</td></tr>
+        <tr><td>LoRA + AttnRes</td><td>Loss 2.57 &mdash; LoRA too constrained for deep co-adaptation</td></tr>
+        <tr><td>Knowledge Distillation</td><td>KL loss exploded due to uniform-attention initial disruption</td></tr>
+        <tr style="background-color: #eafaf1;"><td><strong>Zero-init queries (paper default)</strong></td><td><strong>Best result: -0.022 loss improvement</strong></td></tr>
+    </table>
+
+    <p>The conclusion: <strong>for fine-tuning, just use the paper's zero-init</strong>. For the best results, <strong>train from scratch</strong>.</p>
+
+    <h2>Lessons Learned</h2>
+
+    <ol>
+        <li><strong>Train from scratch for maximum benefit.</strong> AttnRes shows 3x larger improvements when the model co-evolves with cross-layer routing from step 0.</li>
+        <li><strong>Block mode &gt; Full mode</strong> at small-to-medium scale. Fewer, more distinctive block representations are easier to route than many nearly-identical sublayer outputs.</li>
+        <li><strong>Zero-init queries work best.</strong> The paper's default initialization (all projection weights = 0 &rarr; uniform softmax) outperforms all our alternatives: recency bias, sigmoid gates, LoRA co-adaptation, and knowledge distillation.</li>
+        <li><strong>Don't give the model an escape hatch.</strong> When a learnable parameter allows recovering standard residual behavior, the model will use it. Freeze the bias at zero to force cross-layer learning.</li>
+        <li><strong>AttnRes adds negligible overhead.</strong> 0.03% parameters, &lt;2% latency. The cost is almost free.</li>
+    </ol>
+
+    <h2>Quick Start</h2>
+
+    <pre><code># Install
+pip install -r requirements.txt
+
+# Train from scratch (Block AttnRes, recommended)
+torchrun --nproc_per_node=8 train.py --mode block --num_blocks 4
+
+# Evaluate
+python eval.py --model_path output/scratch-block-d512-L12-20k/final --mode block
+
+# Interactive visualization
+python app.py --model_path output/scratch-block-d512-L12-20k/final --mode block</code></pre>
+
+    <h2>Pretrained Weights</h2>
+
+    <table>
+        <tr><th>Model</th><th>Mode</th><th>HuggingFace</th></tr>
+        <tr><td>100M Baseline</td><td>&mdash;</td><td><a href="https://huggingface.co/wdlctc/open-attnres-baseline">wdlctc/open-attnres-baseline</a></td></tr>
+        <tr><td>100M Block AttnRes</td><td>4 blocks</td><td><a href="https://huggingface.co/wdlctc/open-attnres-block">wdlctc/open-attnres-block</a></td></tr>
+        <tr><td>100M Full AttnRes</td><td>per-sublayer</td><td><a href="https://huggingface.co/wdlctc/open-attnres-full">wdlctc/open-attnres-full</a></td></tr>
+    </table>
+
+    <h2>Citation</h2>
+
+    <div class="citation">
+        <pre>@software{luo2025openattnres,
+  title={Open Attention Residuals},
+  author={Cheng Luo and Zefan Cai},
+  url={https://github.com/wdlctc/open-attention-residuals},
+  year={2025}
+}
+
+@article{kimi2025attention,
+  title={Attention Residuals},
+  author={Kimi Team},
+  journal={arXiv preprint arXiv:2603.15031},
+  year={2025}
+}</pre>
+    </div>
+
+</body>
+</html>
