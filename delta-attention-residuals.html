@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delta Attention Residuals: It's the Routing, Not the Sources</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        h1 { font-size: 1.8em; }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .result {
+            background-color: #e6f3ff;
+            border-left: 4px solid #3498db;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .key-finding {
+            background-color: #eafaf1;
+            border-left: 4px solid #2ecc71;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .warning {
+            background-color: #fdf2e9;
+            border-left: 4px solid #e67e22;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .citation {
+            background-color: #f9f9f9;
+            border-left: 4px solid #95a5a6;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        tr:nth-child(even) { background-color: #fafafa; }
+        img {
+            max-width: 100%;
+            height: auto;
+            margin: 15px 0;
+        }
+        .authors {
+            color: #666;
+            font-style: italic;
+            margin-bottom: 20px;
+        }
+        .links a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #0066cc;
+            font-weight: bold;
+        }
+        .links {
+            margin-bottom: 25px;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About</a>
+        <a href="research.html">Research</a>
+        <a href="blogs.html">Blogs</a>
+    </nav>
+
+    <h1>Delta Attention Residuals: It's the Routing, Not the Sources</h1>
+
+    <p class="authors">Cheng Luo, Zefan Cai, Junjie Hu &mdash; May 2026</p>
+
+    <div class="links">
+        <a href="https://github.com/wdlctc/delta-attention-residuals-code">Code</a>
+        <a href="https://github.com/wdlctc/open-attention-residuals">Open AttnRes</a>
+        <a href="https://arxiv.org/abs/2603.15031">Original Paper (Kimi Team)</a>
+    </div>
+
+    <h2>TL;DR</h2>
+
+    <p>This is a follow-up to our <a href="open-attention-residuals.html">Open Attention Residuals</a> work. We built <strong>Delta Attention Residuals</strong>, which beats both standard residuals and Attention Residuals from 220M to 7.6B (1.7&ndash;8.2% lower validation PPL). But after some good pushback online, we want to be precise about <em>why</em> it works &mdash; because our first framing was a bit too convenient.</p>
+
+    <div class="key-finding">
+        <strong>The corrected story:</strong> The win is <strong>not</strong> "route over deltas instead of cumulative states." Attention Residuals already route over per-sublayer outputs (deltas). The actual lever is the <strong>routing formulation</strong>: <em>additive</em> routing ($\mathbf{h} = \tilde{\mathbf{h}} + \sum_i \alpha_i \mathbf{v}_i$) instead of <em>replacement</em> routing ($\mathbf{h} = \sum_i \alpha_i \mathbf{v}_i$). That single change is what preserves the residual stream, gives a safe zero-init, and lets you convert pretrained checkpoints by fine-tuning.
+    </div>
+
+    <h2>Where We Started (and what was sloppy)</h2>
+
+    <p>Our initial pitch was: standard Attention Residuals route over <em>cumulative</em> hidden states $\mathbf{h}_i = \mathbf{h}_0 + \sum_{j\le i}\mathbf{v}_j$, which are highly redundant, so the softmax routing collapses toward uniform in deep layers (max weight ${\sim}0.2$). Delta routing fixes this by attending over <em>deltas</em> $\mathbf{v}_i = \mathbf{h}_{i+1} - \mathbf{h}_i$, keeping routing sharp (max weight ${\sim}0.6$).</p>
+
+    <p>That story is half right, and the half that's wrong matters. If you read the original Attention Residuals paper carefully:</p>
+
+    <ul>
+        <li><strong>Full AttnRes</strong> (Eq. 3&ndash;4) sets the key/value to $\mathbf{v}_i = f_i(\mathbf{h}_i)$ &mdash; the <em>individual</em> sublayer output. That is exactly a delta.</li>
+        <li><strong>Block AttnRes</strong> (Eq. 5&ndash;6, the variant Kimi actually deploys) resets the running sum at each block boundary, so its stored sources are block deltas $\mathbf{b}_n = \mathbf{h}_{\text{end}} - \mathbf{h}_{\text{start}}$, plus the current intra-block partial sum.</li>
+    </ul>
+
+    <div class="warning">
+        <strong>So "delta vs cumulative" is not the clean dividing line we implied.</strong> Attention Residuals are already, to a large extent, attending over deltas. Thanks to <a href="https://x.com/nrol_ling">@nrol_ling</a> for pushing on this &mdash; it forced us to find the real mechanism.
+    </div>
+
+    <h2>The Two Axes That Actually Matter</h2>
+
+    <p>It's cleaner to think about two <em>orthogonal</em> design choices:</p>
+
+    <table>
+        <tr><th>Axis</th><th>Options</th><th>What it controls</th></tr>
+        <tr><td><strong>Source</strong></td><td>cumulative state $\mathbf{h}_i$ &nbsp;vs&nbsp; delta $\mathbf{v}_i$ / block-delta $\Delta_b$</td><td>How distinctive the routing candidates are</td></tr>
+        <tr><td><strong>Routing</strong></td><td>replacement $\mathbf{h}=\sum\alpha_i\mathbf{s}_i$ &nbsp;vs&nbsp; additive $\mathbf{h}=\tilde{\mathbf{h}}+\sum\alpha_i\mathbf{v}_i$</td><td>Whether the residual stream survives</td></tr>
+    </table>
+
+    <p>Mapping the methods onto this grid makes the picture obvious:</p>
+
+    <table>
+        <tr><th>Method</th><th>Source</th><th>Routing</th><th>Reset?</th></tr>
+        <tr><td>Block AttnRes (Kimi)</td><td>block delta</td><td>replacement</td><td>yes</td></tr>
+        <tr><td>Full AttnRes (Kimi)</td><td>sublayer delta</td><td>replacement</td><td>every layer</td></tr>
+        <tr style="background-color: #eafaf1;"><td><strong>Delta Block (ours)</strong></td><td>block delta</td><td><strong>additive</strong></td><td>no</td></tr>
+        <tr style="background-color: #eafaf1;"><td><strong>Delta AttnRes (ours)</strong></td><td>sublayer delta</td><td><strong>additive</strong></td><td>no</td></tr>
+    </table>
+
+    <p>Read the rows: <strong>our methods share the source type with Kimi's.</strong> The column that flips is <em>routing</em>. Delta Block vs Block AttnRes differ in exactly one thing &mdash; additive vs replacement.</p>
+
+    <h2>Why Additive Routing Is the Lever</h2>
+
+    <p>Replacement routing throws the residual stream away and rebuilds the hidden state from a convex combination of sources:</p>
+
+    <pre><code># Replacement (Attention Residuals): the stream is overwritten
+h = sum(alpha_i * v_i)            # softmax weights sum to 1
+
+# Additive (Delta Attention Residuals): the stream is preserved
+h = h_tilde + sum(alpha_i * v_i)  # routing augments, never replaces</code></pre>
+
+    <p>Three consequences follow, and all three are about the residual stream, not the sources:</p>
+
+    <ol>
+        <li><strong>Residual preservation.</strong> The gradient highway $\tilde{\mathbf{h}}$ is always there. Replacement breaks it whenever the softmax doesn't happen to reconstruct it.</li>
+        <li><strong>Safe initialization.</strong> With zero-init queries the softmax is uniform, so $\sum\alpha_i\mathbf{v}_i$ is just a small bounded perturbation added to $\tilde{\mathbf{h}}$ &mdash; the layer is the identity at step 0. A replacement layer at uniform init returns the <em>mean</em> of the sources, which is <em>not</em> the residual sum, so it cannot reduce to a vanilla transformer.</li>
+        <li><strong>No information loss at boundaries.</strong> Because we never reset, every sublayer's contribution stays individually reachable.</li>
+    </ol>
+
+    <p>The safe-init property is the practical payoff: it's what lets you take an off-the-shelf pretrained checkpoint and fine-tune it into a Delta Attention Residual model with zero disruption at step 0.</p>
+
+    <h2>The Evidence: Replacement Degrades at Scale</h2>
+
+    <p>From-scratch training on FineWeb-Edu, 10K steps, matched architecture/data/hyperparameters per scale. Validation perplexity (lower is better):</p>
+
+    <table>
+        <tr><th>Scale</th><th>Baseline</th><th>AttnRes (replace)</th><th>Full AttnRes (replace)</th><th>Delta Block (add)</th><th>Delta AttnRes (add)</th></tr>
+        <tr><td>220M</td><td>38.71</td><td>37.39</td><td>37.30</td><td>37.08</td><td><strong>36.83</strong></td></tr>
+        <tr><td>533M</td><td>32.00</td><td>31.75</td><td>31.68</td><td>31.16</td><td><strong>31.05</strong></td></tr>
+        <tr><td>1044M</td><td>29.70</td><td>31.76 <span style="color:#c0392b">(+6.9%)</span></td><td>33.36 <span style="color:#c0392b">(+12.3%)</span></td><td>29.19</td><td><strong>29.13</strong></td></tr>
+        <tr style="background-color: #eafaf1;"><td><strong>7.57B</strong></td><td>17.43</td><td>18.58 <span style="color:#c0392b">(+6.6%)</span></td><td>&mdash;</td><td><strong>16.00 <span style="color:#27ae60">(&minus;8.2%)</span></strong></td><td>&mdash;</td></tr>
+    </table>
+
+    <div class="key-finding">
+        At small scale, replacement routing is fine &mdash; it even helps. But as depth grows, replacement <strong>degrades below the plain-residual baseline</strong>: +6.9% at 1B and +6.6% at 8B. The most aggressive replacement variant (Full AttnRes, reset every layer) is the <em>worst</em> at 1B (+12.3%). Additive routing turns that same setup into a consistent win at every scale, peaking at <strong>&minus;8.2% PPL at 7.6B</strong>.
+    </div>
+
+    <p>This is the cleanest argument for the two-axis view: holding the <em>source</em> fixed (block deltas) and flipping only the <em>routing</em> (replacement &rarr; additive) converts a method that degrades into one that improves.</p>
+
+    <h2>So What About Routing Collapse?</h2>
+
+    <p>Routing collapse is still real &mdash; we do observe the max softmax weight fall to ${\sim}0.2$ in deep layers for the replacement baselines, while our additive delta routing holds ${\sim}0.6$ (1.8&times; higher average max weight, 0.62 vs 0.35). But we now read it as a <em>symptom</em> rather than the root cause. Redundancy among routing candidates lowers the contrast the softmax can express; resetting and replacing the stream compounds the damage at depth. Additive routing sidesteps both, which is why the routing stays sharp <em>and</em> the loss stays low.</p>
+
+    <h2>Cost</h2>
+
+    <p>Delta Block is the practical default. At 7.57B it adds <strong>589.8K routing parameters (0.008%)</strong> and ~3% memory. It's also <em>faster and lighter than Attention Residuals</em> (14.0k vs 12.5k tok/s, 42.7 vs 44.0 GB) precisely because additive routing avoids the costly hidden-state replacement and reset operations.</p>
+
+    <h2>Lessons (Updated)</h2>
+
+    <ol>
+        <li><strong>Name the right variable.</strong> Our gain comes from <em>additive vs replacement routing</em>, not from inventing delta sources &mdash; Attention Residuals already route over deltas.</li>
+        <li><strong>Preserve the residual stream.</strong> Replacement routing discards the gradient highway and gets worse with depth; additive routing keeps it and scales.</li>
+        <li><strong>Safe zero-init is the unlock for fine-tuning.</strong> Identity-at-init is only possible because routing <em>adds</em> to the stream rather than replacing it.</li>
+        <li><strong>Ablate the axis you claim.</strong> To isolate the lever, fix the source (block deltas) and flip only the routing. That's the comparison that actually supports the story.</li>
+        <li><strong>Public pushback makes the paper better.</strong> The sharpest framing of this work came out of a Twitter thread, not the first draft.</li>
+    </ol>
+
+    <h2>Quick Start</h2>
+
+    <pre><code># Train from scratch (Delta Block, recommended)
+torchrun --nproc_per_node=8 train_scratch.py --mode delta_block --num_blocks 4
+
+# Same-source ablation: delta sources, but replacement routing
+torchrun --nproc_per_node=8 train_scratch.py --mode delta_replace_block --num_blocks 4
+
+# Convert a pretrained checkpoint via fine-tuning (additive, zero-init)
+torchrun --nproc_per_node=8 train_finetune.py --mode delta_block
+
+# Evaluate downstream
+python eval_downstream.py --model_path output/.../final --mode delta_block --tasks paper</code></pre>
+
+    <h2>Citation</h2>
+
+    <div class="citation">
+        <pre>@article{luo2026delta,
+  title={Delta Attention Residuals},
+  author={Cheng Luo and Zefan Cai and Junjie Hu},
+  url={https://github.com/wdlctc/delta-attention-residuals-code},
+  year={2026}
+}
+
+@article{kimi2025attention,
+  title={Attention Residuals},
+  author={Kimi Team},
+  journal={arXiv preprint arXiv:2603.15031},
+  year={2025}
+}</pre>
+    </div>
+
+</body>
+</html>
