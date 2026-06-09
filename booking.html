@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book a Meeting - Cheng Luo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        nav {
+            text-align: right;
+        }
+        nav a {
+            margin-left: 15px;
+            text-decoration: none;
+            color: #0066cc;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 4px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-top: 0;
+        }
+        .tz-banner {
+            background: #f0f6ff;
+            border: 1px solid #cfe3ff;
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 0.9em;
+            color: #335;
+            margin: 18px 0;
+        }
+        .booker {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+            margin-top: 10px;
+        }
+        .panel { flex: 1 1 300px; }
+        .panel h3 {
+            margin: 0 0 10px;
+            font-size: 1.05em;
+        }
+        /* Calendar */
+        .cal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .cal-header button {
+            background: none;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            width: 32px; height: 32px;
+            cursor: pointer;
+            color: #0066cc;
+            font-size: 1.1em;
+        }
+        .cal-header button:hover { background: #f0f6ff; }
+        .cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        .cal-grid .dow {
+            text-align: center;
+            font-size: 0.72em;
+            color: #999;
+            padding: 4px 0;
+            font-weight: bold;
+        }
+        .cal-grid button {
+            aspect-ratio: 1 / 1;
+            border: 1px solid #eee;
+            background: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            color: #333;
+        }
+        .cal-grid button:hover:not(:disabled) { background: #f0f6ff; border-color: #0066cc; }
+        .cal-grid button:disabled {
+            color: #ccc;
+            background: #fafafa;
+            cursor: not-allowed;
+        }
+        .cal-grid button.selected {
+            background: #0066cc;
+            color: #fff;
+            border-color: #0066cc;
+        }
+        .cal-grid button.empty { border: none; background: none; cursor: default; }
+        /* Slots */
+        .slots {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+        .slots button {
+            border: 1px solid #ddd;
+            background: #fff;
+            border-radius: 6px;
+            padding: 8px 6px;
+            cursor: pointer;
+            text-align: center;
+            line-height: 1.2;
+        }
+        .slots button:hover { border-color: #0066cc; background: #f0f6ff; }
+        .slots button.selected { background: #0066cc; color: #fff; border-color: #0066cc; }
+        .slots button .sub { display: block; font-size: 0.72em; color: #888; }
+        .slots button.selected .sub { color: #cfe3ff; }
+        .slot-hint { color: #999; font-style: italic; font-size: 0.9em; }
+        /* Form */
+        #details { margin-top: 24px; display: none; }
+        #details.active { display: block; }
+        .summary {
+            background: #f0f6ff;
+            border: 1px solid #cfe3ff;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+        }
+        label { display: block; margin: 12px 0 4px; font-weight: bold; font-size: 0.95em; }
+        input, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 1em;
+        }
+        textarea { resize: vertical; min-height: 70px; }
+        .btn-primary {
+            margin-top: 18px;
+            background: #0066cc;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 12px 22px;
+            font-size: 1em;
+            cursor: pointer;
+        }
+        .btn-primary:hover { background: #0052a3; }
+        .btn-primary:disabled { background: #9bc0e8; cursor: not-allowed; }
+        .honey { position: absolute; left: -9999px; top: -9999px; }
+        /* Confirmation */
+        #confirmation { display: none; text-align: center; padding: 20px 0; }
+        #confirmation.active { display: block; }
+        .check { font-size: 3em; color: #2e9e3f; }
+        .cal-actions a {
+            display: inline-block;
+            margin: 8px 6px 0;
+            padding: 10px 18px;
+            border-radius: 6px;
+            text-decoration: none;
+            border: 1px solid #0066cc;
+            color: #0066cc;
+        }
+        .cal-actions a.filled { background: #0066cc; color: #fff; }
+        .cal-actions a:hover { background: #f0f6ff; }
+        .cal-actions a.filled:hover { background: #0052a3; }
+        #formError { color: #c0392b; margin-top: 12px; }
+        footer { text-align: center; color: #999; font-size: 0.85em; margin-top: 40px; }
+        @media (max-width: 560px) {
+            .slots { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About</a>
+        <a href="research.html">Research</a>
+        <a href="blogs.html">Blog</a>
+        <a href="booking.html">Book</a>
+    </nav>
+
+    <h1>Book a Meeting</h1>
+    <p class="subtitle">Schedule a 30-minute chat with Cheng Luo</p>
+
+    <div class="tz-banner" id="tzBanner"></div>
+
+    <div id="booker" class="booker">
+        <div class="panel">
+            <h3>1. Pick a date</h3>
+            <div class="cal-header">
+                <button type="button" id="prevMonth" aria-label="Previous month">&#8249;</button>
+                <strong id="monthLabel"></strong>
+                <button type="button" id="nextMonth" aria-label="Next month">&#8250;</button>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+        </div>
+        <div class="panel">
+            <h3>2. Pick a time</h3>
+            <div id="slots" class="slots">
+                <p class="slot-hint">Select a date to see available times.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="details">
+        <h3>3. Your details</h3>
+        <div class="summary" id="summary"></div>
+        <form id="bookingForm" autocomplete="on">
+            <!-- honeypot for spam bots -->
+            <input type="checkbox" name="botcheck" class="honey" tabindex="-1" autocomplete="off">
+            <label for="name">Name *</label>
+            <input type="text" id="name" name="visitor_name" required>
+            <label for="email">Email *</label>
+            <input type="email" id="email" name="visitor_email" required>
+            <label for="topic">What would you like to discuss? *</label>
+            <textarea id="topic" name="topic" required placeholder="A sentence or two about the purpose of the meeting"></textarea>
+            <button type="submit" class="btn-primary" id="submitBtn">Request this time</button>
+            <div id="formError"></div>
+        </form>
+    </div>
+
+    <div id="confirmation">
+        <div class="check">&#10003;</div>
+        <h2>Request sent!</h2>
+        <p id="confirmText"></p>
+        <p>Add it to your own calendar so you don't forget:</p>
+        <div class="cal-actions">
+            <a id="gcalLink" class="filled" target="_blank" rel="noopener">Add to Google Calendar</a>
+            <a id="icsLink" download="meeting-with-cheng-luo.ics">Download .ics</a>
+        </div>
+        <p style="margin-top:24px;"><a href="index.html" style="color:#0066cc;">&#8592; Back to home</a></p>
+    </div>
+
+    <footer>
+        Cheng Luo &middot; <a href="mailto:wdlctc@gmail.com" style="color:#999;">wdlctc@gmail.com</a>
+    </footer>
+
+    <script>
+    /* ============================================================
+       CONFIG  --  edit these to change availability & delivery
+       ============================================================ */
+    const CONFIG = {
+        HOST_NAME: "Cheng Luo",
+        HOST_EMAIL: "wdlctc@gmail.com",
+        // Your availability is defined in THIS timezone (IANA name).
+        // Change if you're not on US Pacific. e.g. "America/New_York",
+        // "Europe/London", "Asia/Shanghai".
+        HOST_TIMEZONE: "America/Los_Angeles",
+        WORK_START_HOUR: 9,      // 9:00 AM (host time)
+        WORK_END_HOUR: 17,       // 5:00 PM (host time) -- last slot ends here
+        SLOT_MINUTES: 30,
+        MEETING_MINUTES: 30,
+        MAX_DAYS_AHEAD: 60,      // how far out visitors can book
+        AVAILABLE_WEEKDAYS: [1, 2, 3, 4, 5], // 0=Sun .. 6=Sat  (Mon-Fri)
+
+        // ====== ONE-TIME SETUP: paste your Web3Forms access key ======
+        // Get a free key in 1 minute: https://web3forms.com  ->  enter
+        // wdlctc@gmail.com -> check inbox -> copy the access key here.
+        WEB3FORMS_ACCESS_KEY: "YOUR_WEB3FORMS_ACCESS_KEY"
+    };
+
+    const VISITOR_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "your local time";
+
+    /* ---------- timezone helpers ---------- */
+    // Offset (ms) between the given IANA timezone and UTC at `date`.
+    // localWallTime = utcInstant + offset
+    function tzOffsetMs(timeZone, date) {
+        const dtf = new Intl.DateTimeFormat('en-US', {
+            timeZone, hour12: false,
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+        const p = {};
+        for (const part of dtf.formatToParts(date)) p[part.type] = part.value;
+        const asUTC = Date.UTC(p.year, p.month - 1, p.day, p.hour === '24' ? 0 : p.hour, p.minute, p.second);
+        return asUTC - date.getTime();
+    }
+    // Build the real instant (Date) whose wall-clock reading in HOST_TIMEZONE
+    // is y-m-d hh:mm.
+    function hostWallTimeToDate(y, m, d, hh, mm) {
+        const guess = Date.UTC(y, m, d, hh, mm);
+        const offset = tzOffsetMs(CONFIG.HOST_TIMEZONE, new Date(guess));
+        return new Date(guess - offset);
+    }
+    function fmtTime(date, timeZone) {
+        return date.toLocaleTimeString('en-US', {
+            timeZone, hour: 'numeric', minute: '2-digit'
+        });
+    }
+    function fmtTimeWithZone(date, timeZone) {
+        return date.toLocaleTimeString('en-US', {
+            timeZone, hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+        });
+    }
+    function fmtDateLong(date, timeZone) {
+        return date.toLocaleDateString('en-US', {
+            timeZone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        });
+    }
+    // Compact UTC stamp for calendar links / ICS: 20260610T160000Z
+    function toCalStamp(date) {
+        return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    }
+
+    /* ---------- state ---------- */
+    const today = new Date();
+    let viewYear = today.getFullYear();
+    let viewMonth = today.getMonth();
+    let selectedDate = null;   // {y, m, d}
+    let selectedSlot = null;   // Date instant (start)
+
+    const MONTHS = ['January','February','March','April','May','June','July',
+                    'August','September','October','November','December'];
+    const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    /* ---------- render calendar ---------- */
+    const calGrid = document.getElementById('calGrid');
+    const monthLabel = document.getElementById('monthLabel');
+
+    function startOfDay(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+    const minDate = startOfDay(today);
+    const maxDate = startOfDay(new Date(today.getTime() + CONFIG.MAX_DAYS_AHEAD * 86400000));
+
+    function renderCalendar() {
+        monthLabel.textContent = MONTHS[viewMonth] + ' ' + viewYear;
+        calGrid.innerHTML = '';
+        for (const d of DOW) {
+            const el = document.createElement('div');
+            el.className = 'dow';
+            el.textContent = d;
+            calGrid.appendChild(el);
+        }
+        const first = new Date(viewYear, viewMonth, 1);
+        const startPad = first.getDay();
+        const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+        for (let i = 0; i < startPad; i++) {
+            const el = document.createElement('button');
+            el.className = 'empty';
+            el.disabled = true;
+            calGrid.appendChild(el);
+        }
+        for (let day = 1; day <= daysInMonth; day++) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = day;
+            const thisDate = startOfDay(new Date(viewYear, viewMonth, day));
+            const dow = thisDate.getDay();
+            const isWorkday = CONFIG.AVAILABLE_WEEKDAYS.includes(dow);
+            const inRange = thisDate >= minDate && thisDate <= maxDate;
+            if (!isWorkday || !inRange) {
+                btn.disabled = true;
+            } else {
+                btn.addEventListener('click', () => selectDate(viewYear, viewMonth, day, btn));
+            }
+            if (selectedDate && selectedDate.y === viewYear &&
+                selectedDate.m === viewMonth && selectedDate.d === day) {
+                btn.classList.add('selected');
+            }
+            calGrid.appendChild(btn);
+        }
+    }
+
+    document.getElementById('prevMonth').addEventListener('click', () => {
+        viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } renderCalendar();
+    });
+    document.getElementById('nextMonth').addEventListener('click', () => {
+        viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } renderCalendar();
+    });
+
+    /* ---------- render slots ---------- */
+    const slotsEl = document.getElementById('slots');
+
+    function selectDate(y, m, d) {
+        selectedDate = { y, m, d };
+        selectedSlot = null;
+        renderCalendar();
+        renderSlots();
+        document.getElementById('details').classList.remove('active');
+    }
+
+    function renderSlots() {
+        slotsEl.innerHTML = '';
+        const now = new Date();
+        const slots = [];
+        for (let h = CONFIG.WORK_START_HOUR; h < CONFIG.WORK_END_HOUR; h++) {
+            for (let min = 0; min < 60; min += CONFIG.SLOT_MINUTES) {
+                const start = hostWallTimeToDate(selectedDate.y, selectedDate.m, selectedDate.d, h, min);
+                if (start > now) slots.push(start);
+            }
+        }
+        if (slots.length === 0) {
+            slotsEl.innerHTML = '<p class="slot-hint">No more times available on this day. Try another date.</p>';
+            return;
+        }
+        for (const start of slots) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.innerHTML = '<strong>' + fmtTime(start, VISITOR_TZ) + '</strong>' +
+                '<span class="sub">' + fmtTimeWithZone(start, CONFIG.HOST_TIMEZONE) + ' (Cheng)</span>';
+            btn.addEventListener('click', () => selectSlot(start, btn));
+            slotsEl.appendChild(btn);
+        }
+    }
+
+    function selectSlot(start, btn) {
+        selectedSlot = start;
+        for (const b of slotsEl.querySelectorAll('button')) b.classList.remove('selected');
+        btn.classList.add('selected');
+        const details = document.getElementById('details');
+        details.classList.add('active');
+        const end = new Date(start.getTime() + CONFIG.MEETING_MINUTES * 60000);
+        document.getElementById('summary').innerHTML =
+            '<strong>' + fmtDateLong(start, VISITOR_TZ) + '</strong><br>' +
+            fmtTime(start, VISITOR_TZ) + ' &ndash; ' + fmtTime(end, VISITOR_TZ) +
+            ' <span style="color:#666">(' + VISITOR_TZ + ', your time)</span><br>' +
+            '<span style="color:#666;font-size:0.9em">' +
+            fmtTimeWithZone(start, CONFIG.HOST_TIMEZONE) + " &middot; Cheng's time</span>";
+        details.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    /* ---------- calendar link builders ---------- */
+    function googleCalUrl(start, end, title, details, guestEmail) {
+        const params = new URLSearchParams({
+            action: 'TEMPLATE',
+            text: title,
+            dates: toCalStamp(start) + '/' + toCalStamp(end),
+            details: details
+        });
+        let url = 'https://calendar.google.com/calendar/render?' + params.toString();
+        if (guestEmail) url += '&add=' + encodeURIComponent(guestEmail);
+        return url;
+    }
+    function icsBlobUrl(start, end, title, description, visitorName, visitorEmail) {
+        const uid = toCalStamp(start) + '-' + Math.abs(hashStr(visitorEmail)) + '@wdlctc.github.io';
+        const lines = [
+            'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//wdlctc.github.io//Booking//EN',
+            'CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+            'UID:' + uid,
+            'DTSTAMP:' + toCalStamp(new Date()),
+            'DTSTART:' + toCalStamp(start),
+            'DTEND:' + toCalStamp(end),
+            'SUMMARY:' + icsEscape(title),
+            'DESCRIPTION:' + icsEscape(description),
+            'ORGANIZER;CN=' + icsEscape(CONFIG.HOST_NAME) + ':mailto:' + CONFIG.HOST_EMAIL,
+            'ATTENDEE;CN=' + icsEscape(visitorName) + ';RSVP=TRUE:mailto:' + visitorEmail,
+            'END:VEVENT','END:VCALENDAR'
+        ];
+        const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
+        return URL.createObjectURL(blob);
+    }
+    function icsEscape(s) { return String(s).replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n'); }
+    function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
+
+    /* ---------- submit ---------- */
+    document.getElementById('bookingForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const errEl = document.getElementById('formError');
+        errEl.textContent = '';
+        if (!selectedSlot) { errEl.textContent = 'Please pick a date and time first.'; return; }
+
+        const name = document.getElementById('name').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const topic = document.getElementById('topic').value.trim();
+        const start = selectedSlot;
+        const end = new Date(start.getTime() + CONFIG.MEETING_MINUTES * 60000);
+
+        const title = 'Meeting with ' + name + ' (via wdlctc.github.io)';
+        const hostDetails = 'Booked via wdlctc.github.io\n\n' +
+            'Guest: ' + name + ' <' + email + '>\n' +
+            'Topic: ' + topic;
+        // Google Calendar link FOR CHENG -> invites the visitor as guest.
+        const hostGcal = googleCalUrl(start, end, title, hostDetails, email);
+
+        const messageLines = [
+            'New meeting request from your website booking page.',
+            '',
+            'Guest:   ' + name,
+            'Email:   ' + email,
+            '',
+            'When (your time, ' + CONFIG.HOST_TIMEZONE + '):',
+            '   ' + fmtDateLong(start, CONFIG.HOST_TIMEZONE),
+            '   ' + fmtTimeWithZone(start, CONFIG.HOST_TIMEZONE) + ' - ' + fmtTimeWithZone(end, CONFIG.HOST_TIMEZONE),
+            '',
+            "When (guest's time, " + VISITOR_TZ + '):',
+            '   ' + fmtDateLong(start, VISITOR_TZ),
+            '   ' + fmtTimeWithZone(start, VISITOR_TZ) + ' - ' + fmtTimeWithZone(end, VISITOR_TZ),
+            '',
+            'Duration: ' + CONFIG.MEETING_MINUTES + ' minutes',
+            '',
+            'Topic:',
+            '   ' + topic,
+            '',
+            '----------------------------------------',
+            'Add to your Google Calendar (invites the guest):',
+            hostGcal
+        ];
+
+        const payload = {
+            access_key: CONFIG.WEB3FORMS_ACCESS_KEY,
+            subject: 'New meeting request: ' + name + ' - ' + fmtDateLong(start, CONFIG.HOST_TIMEZONE),
+            from_name: 'Website Booking (wdlctc.github.io)',
+            replyto: email,
+            name: name,
+            email: email,
+            message: messageLines.join('\n'),
+            botcheck: document.querySelector('input[name="botcheck"]').checked
+        };
+
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Sending...';
+
+        if (CONFIG.WEB3FORMS_ACCESS_KEY === 'YOUR_WEB3FORMS_ACCESS_KEY') {
+            errEl.textContent = 'Booking is not fully configured yet (missing Web3Forms key). Please email wdlctc@gmail.com directly.';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Request this time';
+            return;
+        }
+
+        try {
+            const res = await fetch('https://api.web3forms.com/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+                showConfirmation(name, email, start, end, topic);
+            } else {
+                throw new Error(data.message || 'Submission failed');
+            }
+        } catch (err) {
+            errEl.textContent = 'Something went wrong: ' + err.message +
+                '. Please email wdlctc@gmail.com directly.';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Request this time';
+        }
+    });
+
+    function showConfirmation(name, email, start, end, topic) {
+        document.getElementById('booker').style.display = 'none';
+        document.getElementById('details').style.display = 'none';
+        const conf = document.getElementById('confirmation');
+        conf.classList.add('active');
+
+        document.getElementById('confirmText').innerHTML =
+            'Your request for <strong>' + fmtDateLong(start, VISITOR_TZ) + '</strong> at <strong>' +
+            fmtTime(start, VISITOR_TZ) + '</strong> (' + VISITOR_TZ + ') has been sent to ' +
+            CONFIG.HOST_NAME + '. You will hear back at <strong>' + email + '</strong> to confirm.';
+
+        const title = 'Meeting with ' + CONFIG.HOST_NAME;
+        const desc = 'Booked via wdlctc.github.io\nTopic: ' + topic;
+        // Google Calendar link FOR THE VISITOR -> invites Cheng as guest.
+        document.getElementById('gcalLink').href =
+            googleCalUrl(start, end, title, desc, CONFIG.HOST_EMAIL);
+        document.getElementById('icsLink').href =
+            icsBlobUrl(start, end, title, desc, name, email);
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    /* ---------- init ---------- */
+    document.getElementById('tzBanner').innerHTML =
+        '&#128197; Times are shown in <strong>your timezone (' + VISITOR_TZ + ')</strong>. ' +
+        "Cheng's availability is Mon&ndash;Fri, " + CONFIG.WORK_START_HOUR + ':00&ndash;' +
+        CONFIG.WORK_END_HOUR + ':00 in ' + CONFIG.HOST_TIMEZONE + '.';
+    renderCalendar();
+    </script>
+</body>
+</html>
