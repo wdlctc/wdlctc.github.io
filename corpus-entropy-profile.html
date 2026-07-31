@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>The Corpus Entropy Profile</title>
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script>
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true
+            }
+        };
+    </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <style>
         body {
@@ -86,7 +95,7 @@
 
     <h2>Two axes, and why the second one is hard to measure</h2>
 
-    <p>Given a reference model $\theta$, we score windows of a corpus by teacher-forcing: condition on a fixed 512-token prefix, then score the next 1024 tokens, so every window is measured at an identical context length. Per-token surprisals $s_i=-\log_2 p_\theta(x_i\mid x_{<i})$ are normalized <strong>per byte</strong> (via exact byte-BPE accounting), making everything tokenizer-independent.</p>
+    <p>Given a reference model $\theta$, we score windows of a corpus by teacher-forcing: condition on a fixed 512-token prefix, then score the next 1024 tokens, so every window is measured at an identical context length. Per-token surprisals $s_i=-\log_2 p_\theta(x_i\mid x_{&lt;i})$ are normalized <strong>per byte</strong> (via exact byte-BPE accounting), making everything tokenizer-independent.</p>
 
     <ul>
         <li><strong>Mean conditional entropy</strong> $\bar{H}$ = byte-weighted mean bits-per-byte. "How hard, on average."</li>
@@ -95,7 +104,7 @@
 
     <p>The catch: a naive between-window standard deviation is inflated by finite-window sampling noise, and the inflation depends on window length, so the numbers aren't comparable across setups. We remove it with a <strong>split-half covariance</strong> estimator: split each window's scored tokens into two interleaved halves $A$ and $B$ (alternating 32-token blocks), and take</p>
 
-    <p style="text-align:center">$D^2 \;=\; \operatorname{Cov}_j\!\left(h_j^{A},\, h_j^{B}\right).$</p>
+    <p>$$D^2 \;=\; \operatorname{Cov}_j\!\left(h_j^{A},\, h_j^{B}\right).$$</p>
 
     <p>Both halves share the window's true difficulty but have independent sampling noise, so the covariance estimates the real dispersion with the noise term cancelled. Because $\bar{H}$ is a byte-weighted mean and $D^2$ a between-window variance, the profile of any <em>mixture</em> follows in closed form &mdash; and dispersion of a blend <em>exceeds</em> that of its components whenever their means separate. Mixing is a dispersion amplifier.</p>
 
@@ -134,7 +143,7 @@
 
     <p>If dispersion taxes a static model, can a model that adapts computation per context earn part of it back? We swept eight corpora with depth-routing architectures that let each position assemble its own mixture of features across layers, and measured the gain over a plain-residual baseline. The gain tracks $D$ almost perfectly &mdash; and is unrelated to $\bar{H}$:</p>
 
-    <p style="text-align:center">$r\!\left(\Delta_{\text{gain}},\, D\right) = -0.977 \quad(\text{permutation } p = 0.0002), \qquad r\!\left(\Delta_{\text{gain}},\, \bar{H}\right) = -0.12.$</p>
+    <p>$$r\!\left(\Delta_{\text{gain}},\, D\right) = -0.977 \quad(\text{permutation } p = 0.0002), \qquad r\!\left(\Delta_{\text{gain}},\, \bar{H}\right) = -0.12.$$</p>
 
     <img src="cep_d_gain.png" alt="Routing gain vs dispersion and entropy, plus static-depth control">
     <p class="caption">(a) Two adaptive-routing variants both track dispersion $D$. (b) Neither tracks mean entropy $\bar{H}$. (c) A parameter-matched <em>static</em> depth&ndash;width change tracks neither axis &mdash; the correlation is specific to <em>per-context adaptive</em> computation, not depth per se.</p>
@@ -143,7 +152,7 @@
 
     <h2>Why this is a useful number to report</h2>
 
-    <p>Architecture claims are often secretly data-distribution claims. "Method X beats a dense baseline" can hold on one corpus and vanish on another, and the profile tells you which way to expect: the win grows with $D$. The profile is cheap (minutes per corpus on one GPU), tokenizer-independent, compositional under mixing, and verified end-to-end (independent recomputation, exact byte accounting, from-scratch re-scoring, and a mixture identity accurate to $<10^{-4}$). Declare your references, report $(\bar{H}, D)$ alongside your corpus, and a hidden variable becomes visible.</p>
+    <p>Architecture claims are often secretly data-distribution claims. "Method X beats a dense baseline" can hold on one corpus and vanish on another, and the profile tells you which way to expect: the win grows with $D$. The profile is cheap (minutes per corpus on one GPU), tokenizer-independent, compositional under mixing, and verified end-to-end (independent recomputation, exact byte accounting, from-scratch re-scoring, and a mixture identity accurate to $&lt;10^{-4}$). Declare your references, report $(\bar{H}, D)$ alongside your corpus, and a hidden variable becomes visible.</p>
 
     <div class="caveat">
         <strong>What this is not:</strong> low $D$ is not "bad data." Highly templated junk minimizes both axes while being a poor pretraining diet. CEP is a <em>difficulty profile</em>, not a quality score. The results here are at 100M scale with single seeds across eight corpora; error bars and larger-scale confirmation are ongoing.
