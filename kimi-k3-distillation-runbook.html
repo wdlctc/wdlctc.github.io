@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K3 → Qwen3-8B Distillation: The Complete Runbook</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 { color: #2c3e50; }
+        h1 { font-size: 1.8em; }
+        h2 { border-bottom: 2px solid #eee; padding-bottom: 6px; margin-top: 40px; }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #f8f8f8;
+            border: 1px solid #e8e8e8;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 0.85em;
+            line-height: 1.45;
+        }
+        pre code { background: none; padding: 0; }
+        .key-finding {
+            background-color: #eafaf1;
+            border-left: 4px solid #2ecc71;
+            padding: 10px 14px;
+            margin: 12px 0;
+        }
+        .warning {
+            background-color: #fdf2e9;
+            border-left: 4px solid #e67e22;
+            padding: 10px 14px;
+            margin: 12px 0;
+        }
+        .pipeline {
+            background-color: #f4f8fb;
+            border: 1px solid #d6e4f0;
+            border-radius: 6px;
+            padding: 14px;
+            font-family: monospace;
+            font-size: 0.85em;
+            white-space: pre;
+            overflow-x: auto;
+            line-height: 1.5;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+            font-size: 0.93em;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 7px 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        tr:nth-child(even) { background-color: #fafafa; }
+        .authors { color: #666; font-style: italic; margin-bottom: 20px; }
+        .links a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #0066cc;
+            font-weight: bold;
+        }
+        .links { margin-bottom: 25px; }
+        .step-num {
+            display: inline-block;
+            background: #2c3e50;
+            color: #fff;
+            border-radius: 50%;
+            width: 26px; height: 26px;
+            text-align: center;
+            line-height: 26px;
+            margin-right: 8px;
+            font-size: 0.85em;
+        }
+        .toc {
+            background: #fafafa;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            padding: 12px 20px;
+            font-size: 0.93em;
+        }
+        .toc a { text-decoration: none; color: #0066cc; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About</a>
+        <a href="research.html">Research</a>
+        <a href="blogs.html">Blogs</a>
+    </nav>
+
+    <h1>K3 &rarr; Qwen3-8B Distillation: The Complete Runbook</h1>
+    <p class="authors">Cheng Luo &mdash; August 2026</p>
+    <div class="links">
+        <a href="kimi-k3-distillation.html">Results Blog</a>
+        <a href="https://huggingface.co/datasets/Linz99/kimi-k3-scaleswe-distill-traces">Dataset (HF)</a>
+    </div>
+
+    <p>The companion <a href="kimi-k3-distillation.html">results post</a> covers <em>what</em> we found
+    (base ~1% &rarr; distilled ~25% on held-out agentic SWE, saturating at ~450 traces). This page is the
+    <em>how</em>: the end-to-end pipeline, every config that mattered, and the 12 failure modes that cost us
+    real time and money &mdash; so you can reproduce the result without re-paying the tuition.</p>
+
+    <div class="toc">
+        <strong>Contents</strong><br>
+        <a href="#overview">0. Architecture overview</a> &middot;
+        <a href="#setup">1. Node setup</a> &middot;
+        <a href="#collection">2. Trace collection</a> &middot;
+        <a href="#filter">3. Filtering</a> &middot;
+        <a href="#sft">4. SFT training</a> &middot;
+        <a href="#eval">5. Serving &amp; evaluation</a> &middot;
+        <a href="#results">6. Results &amp; scaling law</a> &middot;
+        <a href="#pitfalls">7. The 12 pitfalls</a>
+    </div>
+
+    <h2 id="overview"><span class="step-num">0</span>Architecture overview</h2>
+    <div class="pipeline">[OpenRouter keys &times;3]
+      &darr;
+or_proxy.py :8787 ---- round-robin / retry upstream 5xx / cooldown 429 / drop dead keys
+      &darr;
+eval scaleswe_v1 -m kimi-k3 ---- K3 solves real GitHub PRs as an agent in docker
+  (auto_collect.sh gating)        bash+edit tools, multi-turn, grader-scored &rarr; traces.jsonl
+      &darr; keep reward==1 only
+conv_traces_to_sft.py ---- {messages, tools} parquet, reasoning_content preserved
+      &darr;
+uv run sft (prime-rl) ---- Qwen3-8B full-param FSDP, seq 49k, assistant-only loss
+      &darr;                    [ckpt] interval=45 weights_only=true  &larr; survives GPU reclaims
+vllm serve &times;2 (distilled + base) ---- hermes tool parser + qwen3 reasoning parser
+      &darr;
+eval (scaleswe deduped held-out + swebench cross-benchmark) &rarr; analyze_eval_hash.py
+      &darr;
+HF dataset release</div>
+
+    <p><strong>Stack:</strong> Prime Intellect <code>prime-rl</code> + <code>research-environments</code>;
+    teacher = <code>moonshotai/kimi-k3</code> (OpenRouter, $3/M in, $15/M out); student =
+    <code>Qwen/Qwen3-8B</code>; tasks = <code>PrimeIntellect/Scale-SWE-Verified</code> (17,202 real GitHub
+    PRs, each shipping a docker image + hidden fail-to-pass tests).</p>
+
+    <h2 id="setup"><span class="step-num">1</span>Node setup</h2>
+    <pre><code># prime-rl source (36MB, skip .venv/.git)
+rsync -a --exclude=.venv --exclude=.git &lt;src&gt;:~/kimi-distill/prime-rl/ ~/kimi-distill/prime-rl/
+
+uv self update                                # needs uv &gt;= 0.11.1
+cd ~/kimi-distill/prime-rl
+uv sync --extra flash-attn                    # prebuilt wheel; NEVER a source build
+.venv/bin/python patch_tf_shim.py             # transformers-5.x / ring_flash_attn fix
+.venv/bin/python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('Qwen/Qwen3-8B', ignore_patterns=['original/*'])"   # 16G
+.venv/bin/python -c "from prime_rl.trainer.model import pre_download_model; print('OK')"</code></pre>
+    <p>The collection node additionally needs docker, the <code>scaleswe_v1</code> env package
+    (<code>uv pip install -e environments/swe/scaleswe_v1</code>, plus the <code>verifiers[harbor]</code>
+    extra), and a lot of disk &mdash; task images are ~1.3&nbsp;GB each and pile up into the terabytes.</p>
+
+    <h2 id="collection"><span class="step-num">2</span>Trace collection</h2>
+
+    <h3>2.1 The three-key proxy (start this first)</h3>
+    <pre><code>cd ~/kimi-distill/or-proxy        # keys.txt: one sk-or-v1-... per line, chmod 600
+setsid nohup uv run or_proxy.py --port 8787 &gt; proxy.log 2&gt;&amp;1 &lt;/dev/null &amp; disown
+curl http://127.0.0.1:8787/healthz    # {"ok":true,"live":3}
+curl http://127.0.0.1:8787/stats      # per-key spend / errors</code></pre>
+    <p>What it does: rotate keys per request, remap <code>kimi-k3 &rarr; moonshotai/kimi-k3</code>,
+    mark 401/402 keys dead, cool down 429s, and &mdash; critically &mdash; <strong>retry upstream 5xx and
+    "HTTP&nbsp;200 but the body is an error" across keys with exponential backoff</strong>. Moonshot's
+    gateway degrades nightly under heavy concurrent agentic load; without this retry layer a whole run
+    dies of 503s.</p>
+
+    <h3>2.2 The collection command</h3>
+    <pre><code>cd ~/kimi-distill/research-environments
+export OR_PROXY_KEY=dummy             # proxy injects real keys
+uv run --no-sync eval scaleswe_v1 \
+  -m kimi-k3 \
+  --env.agent.runtime.type docker \   # REQUIRED: default subprocess can't run task images
+  --client.base-url http://127.0.0.1:8787/v1 \
+  --client.api-key-var OR_PROXY_KEY \
+  --env.timeout.episode 900 \         # 15-min cap: a hung rollout stops burning money
+  --sampling.max-tokens 8192 \
+  -s True -n 3000 -c 12 \             # shuffled sampling; keep concurrency &le; 12-16
+  --no-push -o ~/kimi-distill/traces/k3-run1</code></pre>
+    <p>Interrupted? <code>eval --resume &lt;dir&gt;</code> is idempotent &mdash; it re-runs only failed or
+    unattempted tasks. (It takes no other flags; to change concurrency, edit
+    <code>max_concurrent</code> in the saved <code>config.toml</code>.)</p>
+
+    <h3>2.3 Unattended: the self-gating auto-collector</h3>
+    <pre><code>setsid nohup bash auto_collect.sh &gt;/dev/null 2&gt;&amp;1 &amp; disown
+tail -f ~/kimi-distill/auto_collect.log
+# [08-09 05:48] healthy 6/6 $834 usable=834 (running)
+# [08-06 02:20] degraded 2/6 $615 usable=232 -&gt; PAUSED</code></pre>
+    <div class="key-finding">
+        Every 15 minutes it fires 6 concurrent heavy probes at K3. <strong>&ge;5/6 succeed &rarr; collect;
+        fewer &rarr; pause</strong> (and stop spending). It also stops entirely when the key budget drops
+        below a floor. Paired with <code>disk_guard.sh</code> (auto-<code>docker image prune</code> when
+        free disk &lt; 300G), this ran overnight unattended and nearly doubled the dataset.
+    </div>
+
+    <h3>2.4 Collection economics (measured)</h3>
+    <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>K3 pass@1 on scaleswe</td><td>~64%</td></tr>
+        <tr><td>Cost per usable (reward==1) trace</td><td>~$1.5&ndash;1.7</td></tr>
+        <tr><td>Per trace</td><td>median ~25k tokens, ~30 assistant turns, ~40 tool calls</td></tr>
+        <tr><td>Full 993-trace dataset</td><td>~26.6M tokens (~0.03B)</td></tr>
+    </table>
+
+    <h2 id="filter"><span class="step-num">3</span>Filter &rarr; SFT dataset</h2>
+    <pre><code>uv run --no-sync python conv_traces_to_sft.py \
+  ~/kimi-distill/traces/k3-run1 --min-reward 1.0 \
+  -o ~/kimi-distill/sft_data/k3_ours_993</code></pre>
+    <p>Keeps only <code>rewards.solved.score==1</code>, completed, non-errored traces; emits a
+    <code>{messages, tools}</code> parquet with K3's <code>reasoning_content</code> and
+    <code>tool_calls</code> preserved. The grader is a free, perfect quality filter &mdash; every surviving
+    trace is a verified-correct solution.</p>
+
+    <h2 id="sft"><span class="step-num">4</span>SFT training</h2>
+    <pre><code>max_steps = 372          # ceil(993/8) * 3 epochs
+
+[deployment]
+num_gpus = 4             # batch_size must divide num_gpus (8%4=0 OK; 8%6 crashes)
+
+[ckpt]
+interval = 45            # save often...
+weights_only = true      # ...and light: survives mid-write GPU reclaims
+
+[model]
+name = "Qwen/Qwen3-8B"
+seq_len = 49152          # traces are long: median 25k, max 290k tokens
+attn = "flash_attention_2"
+
+[model.ac]
+mode = "full"            # full activation checkpointing for the long context
+
+[data]
+name = ".../sft_data/k3_ours_993"
+seq_len = 49152
+batch_size = 8
+micro_batch_size = 1
+
+[renderer]
+name = "qwen3"
+enable_thinking = true   # render reasoning_content as &lt;think&gt; -- the CoT is trained
+
+[optim]
+lr = 1e-5                # AdamW, constant schedule</code></pre>
+    <pre><code>setsid nohup env CUDA_VISIBLE_DEVICES=2,3,4,5 \
+  uv run --no-sync sft @ sft_ours993.toml --output-dir sft-out/ours993 \
+  &gt; sft.log 2&gt;&amp;1 &lt;/dev/null &amp; disown</code></pre>
+    <p>Full-parameter fine-tune (not LoRA), loss on assistant turns only. Measured: 4&times;H100,
+    ~36s/step, ~4h for 3 epochs over 993 traces; loss 1.25 &rarr; 0.38. Output
+    (<code>weights/step_372/</code>) is a directly-servable HF checkpoint.</p>
+    <div class="warning">
+        <strong>The checkpoint config is the survival kit.</strong> Our shared cluster SIGTERM-reclaims
+        GPUs at random; a full checkpoint takes minutes to gather and one reclaim mid-write corrupted a
+        finished 3.5-hour run (<code>metadata is None</code>, unrecoverable). Frequent
+        <code>weights_only</code> saves are fast and atomic-ish &mdash; a reclaim now costs at most 45 steps.
+    </div>
+
+    <h2 id="eval"><span class="step-num">5</span>Serving &amp; evaluation</h2>
+    <pre><code># distilled on GPUs 2,3 / base on 4,5 -- one command each
+vllm serve sft-out/ours993/weights/step_372 \
+  --served-model-name qwen3-ours993 --port 8100 --tensor-parallel-size 2 \
+  --max-model-len 40960 \
+  --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser qwen3</code></pre>
+    <pre><code># same first-N tasks for both models (-s False), LOW concurrency
+bash eval_student.sh scaleswe_v1          qwen3-base    http://&lt;node&gt;:8101/v1 ev-scale-base 200 6
+bash eval_student.sh scaleswe_v1          qwen3-ours993 http://&lt;node&gt;:8100/v1 ev-scale-dist 200 6
+bash eval_student.sh swebench_verified_v1 qwen3-base    http://&lt;node&gt;:8101/v1 ev-sweb-base  100 6
+bash eval_student.sh swebench_verified_v1 qwen3-ours993 http://&lt;node&gt;:8100/v1 ev-sweb-dist  100 6</code></pre>
+    <p><strong>Decontamination:</strong> hash every training task's problem statement (md5 of the first
+    user message), and exclude any eval task whose hash matches &mdash; <code>analyze_eval_hash.py</code>
+    reports held-out-only pass@1. For strict model-vs-model comparisons, score on the
+    <em>intersection</em> of tasks both evals completed (the base model's 1/137 = 0.7% was identical
+    across runs &mdash; a good sanity check that the harness is stable).</p>
+    <div class="warning">
+        Concurrency 6, not 12: two dozen concurrent 40k-token rollouts overflow the KV cache and the
+        server starts returning 500s, silently poisoning the eval.
+    </div>
+
+    <h2 id="results"><span class="step-num">6</span>Results &amp; scaling law</h2>
+    <table>
+        <tr><th># traces</th><th>scaleswe held-out (distilled vs base)</th><th>swebench_verified</th><th>note</th></tr>
+        <tr><td>31</td><td>~0% &mdash; no effect</td><td>&mdash;</td><td>pipeline validation only</td></tr>
+        <tr><td>163</td><td>5.0% vs 0.7% (~7&times;)</td><td>7.9% vs 4.3%</td><td></td></tr>
+        <tr><td>360</td><td>11.8% vs 0.9% (~13&times;, p&lt;0.001)</td><td>4.3% vs 2.1%</td><td>mixed sources</td></tr>
+        <tr><td>454</td><td>25.4% vs 0.7%</td><td>&mdash;</td><td>self-collected</td></tr>
+        <tr style="background-color: #eafaf1;"><td><strong>993</strong></td><td><strong>25.0% (45/180) vs 1.1% (2/186) &mdash; ~23&times;</strong></td><td><strong>9.2% vs 4.3%</strong></td><td><strong>self-collected, final</strong></td></tr>
+    </table>
+    <div class="key-finding">
+        <strong>Saturation at ~450 traces (~0.012B tokens).</strong> On the 137 held-out tasks common to
+        both evals: base 0.7%, distilled-454 25.0%, distilled-993 27.6% &mdash; statistically flat.
+        ~0.03B tokens of grader-verified agentic traces lift an 8B model from ~1% to ~25%; beyond a few
+        hundred traces the bottleneck is the student's capacity, not the data.
+    </div>
+
+    <h2 id="pitfalls"><span class="step-num">7</span>The 12 pitfalls, ranked by damage</h2>
+    <table>
+        <tr><th>#</th><th>Pitfall</th><th>Symptom</th><th>Fix</th></tr>
+        <tr><td>1</td><td><strong>Disk filled by docker images</strong></td><td>evals mass-error / crawl; <code>No space left on device</code></td><td><code>disk_guard.sh</code>: auto-prune below 300G free</td></tr>
+        <tr><td>2</td><td><strong>Cluster reclaims GPUs (SIGTERM)</strong></td><td>random job death; checkpoint corrupted mid-write</td><td><code>interval=45 weights_only=true</code>; serve-watchdog loops</td></tr>
+        <tr><td>3</td><td><strong>Moonshot upstream degrades nightly</strong></td><td>503/504 storms under concurrent agentic load (c=40 &rarr; 68% errors, $293 wasted)</td><td>proxy retries + c&le;16 + health-gated auto-collector</td></tr>
+        <tr><td>4</td><td>KV-cache OOM while serving</td><td>vLLM 500s at eval c=12</td><td>eval concurrency c=6</td></tr>
+        <tr><td>5</td><td>transformers 5.6.2 vs ring_flash_attn 0.1.8</td><td>fake <code>No module named flash_attn</code></td><td><code>patch_tf_shim.py</code> re-adds the removed symbol</td></tr>
+        <tr><td>6</td><td>Model defaults to FlashAttention-3</td><td><code>FA3 ... not installed</code> at setup</td><td><code>attn="flash_attention_2"</code></td></tr>
+        <tr><td>7</td><td>Batch divisibility</td><td><code>batch_size*cp (8) must be divisible by world_size (6)</code></td><td>num_gpus &isin; {1,2,4,8}</td></tr>
+        <tr><td>8</td><td>Default subprocess runtime</td><td><code>task requires image ... use docker runtime</code></td><td><code>--env.agent.runtime.type docker</code></td></tr>
+        <tr><td>9</td><td>pkill self-match</td><td>kill your own SSH session instead of the target</td><td><code>[e]val</code>-style patterns, or kill by nvidia-smi PID</td></tr>
+        <tr><td>10</td><td>uv venv races</td><td>flash_attn "disappears" after concurrent uv runs</td><td>one uv command per venv at a time</td></tr>
+        <tr><td>11</td><td>zsh word-splitting</td><td>multi-node for-loop runs once on the whole string</td><td>wrap in <code>bash -c '...'</code></td></tr>
+        <tr><td>12</td><td><code>--resume</code> takes no flags</td><td><code>--resume re-runs a saved config verbatim</code></td><td>edit the saved <code>config.toml</code> instead</td></tr>
+    </table>
+
+    <h2>Artifacts</h2>
+    <ul>
+        <li><strong>Dataset:</strong> <a href="https://huggingface.co/datasets/Linz99/kimi-k3-scaleswe-distill-traces">Linz99/kimi-k3-scaleswe-distill-traces</a> &mdash; <code>sft-ours-993/</code> (final), <code>sft-ours-454/</code>, <code>sft-718/</code>, <code>sft/</code> (360), <code>raw/</code></li>
+        <li><strong>Results post:</strong> <a href="kimi-k3-distillation.html">Distilling Kimi-K3 into Qwen3-8B</a></li>
+        <li><strong>Scripts:</strong> <code>or_proxy.py</code>, <code>auto_collect.sh</code>, <code>disk_guard.sh</code>, <code>conv_traces_to_sft.py</code>, <code>eval_student.sh</code>, <code>analyze_eval_hash.py</code>, <code>patch_tf_shim.py</code></li>
+    </ul>
+
+</body>
+</html>
