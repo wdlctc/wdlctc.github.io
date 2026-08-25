@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="A reproducible pipeline for collecting black-box agent traces from Bedrock, adding causal synthetic rationales with Kimi-K3, validating provenance, and exporting Qwen3 SFT data.">
+    <link rel="canonical" href="https://wdlctc.github.io/agentic-swe-distillation.html">
     <title>From Black-Box Agent Traces to Distillation Data</title>
     <style>
         body {
@@ -82,11 +83,17 @@
         <a href="blogs.html">Blogs</a>
     </nav>
 
+    <div class="warning">
+        <strong>Consolidated article.</strong> This implementation note is preserved for old links. The
+        results, data pipeline and complete runbook now live in one canonical article:
+        <a href="agentic-swe-distillation.html#track-b">Distilling Agentic Software Engineering into Qwen3-8B</a>.
+    </div>
+
     <h1>From Black-Box Agent Traces to Distillation Data</h1>
     <p class="authors">Cheng Luo &mdash; August 2026</p>
     <div class="links">
-        <a href="kimi-k3-distillation.html">Distillation Results</a>
-        <a href="kimi-k3-distillation-runbook.html">K3 Runbook</a>
+        <a href="agentic-swe-distillation.html">Consolidated Study</a>
+        <a href="https://github.com/wdlctc/bedrock-kimi-distill">Implementation</a>
     </div>
 
     <p>What do you do when a strong teacher API can solve software-engineering tasks and expose its
@@ -103,19 +110,21 @@
     </div>
 
     <div class="key-finding">
-        <strong>Best recorded downstream gain.</strong> This separate, contamination-controlled run
-        used held-out Scale-SWE tasks.
+        <strong>Downstream result for this Fable+Kimi pipeline.</strong> On strict held-out Scale-SWE,
+        the Kimi-rationale student improved in-distribution, but the cross-benchmark result and timeout
+        rate were negative.
         <table>
             <thead>
-                <tr><th>Model</th><th>Held-out tasks</th><th>Solved</th><th>Pass@1</th><th>Gain vs. base</th></tr>
+                <tr><th>Evaluation</th><th>Base Qwen3-8B</th><th>Fable + Kimi-rationale SFT</th></tr>
             </thead>
             <tbody>
-                <tr><td>Base Qwen3-8B</td><td>141</td><td>1</td><td>0.7%</td><td>&mdash;</td></tr>
-                <tr><td>Kimi-K3-distilled Qwen3-8B</td><td>142</td><td>36</td><td><strong>25.4%</strong></td><td><strong>~36&times;; +24.7 pp</strong></td></tr>
+                <tr><td>Scale-SWE strict held-out</td><td>0/83</td><td><strong>7/83 (+8.43 pp)</strong></td></tr>
+                <tr><td>SWE-bench, no overlap</td><td><strong>5/100</strong></td><td>1/100</td></tr>
+                <tr><td>SWE-bench timeouts</td><td><strong>14</strong></td><td>46</td></tr>
             </tbody>
         </table>
-        This is the project-wide best recorded run, not a claim about every dataset or benchmark.
-        <a href="kimi-k3-distillation.html">Full evaluation</a>.
+        The 25% direct-Kimi result belongs to a different experiment in which Kimi produced both the
+        behavior and reasoning. <a href="agentic-swe-distillation.html#track-a">See the separated comparison</a>.
     </div>
 
     <div class="warning">

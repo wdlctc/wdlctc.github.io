@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="An end-to-end study of distilling agentic software-engineering behavior into Qwen3-8B: direct Kimi-K3 traces, Claude Fable traces with causal synthetic rationales, SFT, decontaminated evaluation, scaling, and failure modes.">
+    <link rel="canonical" href="https://wdlctc.github.io/agentic-swe-distillation.html">
+    <title>Distilling Agentic Software Engineering into Qwen3-8B</title>
+    <style>
+        :root {
+            --ink: #25313d;
+            --muted: #65717d;
+            --blue: #1769aa;
+            --blue-soft: #eef6fc;
+            --green: #238a57;
+            --green-soft: #eaf8f0;
+            --orange: #c86618;
+            --orange-soft: #fff5e9;
+            --red: #b43d3d;
+            --red-soft: #fff0f0;
+            --line: #dfe5ea;
+            --surface: #f7f9fb;
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.68;
+            color: var(--ink);
+            max-width: 940px;
+            margin: 0 auto;
+            padding: 20px 26px 70px;
+            background: #fff;
+        }
+        nav { text-align: right; margin-bottom: 42px; }
+        nav a { margin-left: 18px; text-decoration: none; color: var(--blue); }
+        h1, h2, h3 { color: #203040; line-height: 1.25; }
+        h1 { font-size: 2.25em; letter-spacing: -0.025em; margin-bottom: 10px; }
+        h2 {
+            font-size: 1.55em;
+            border-bottom: 2px solid #edf0f2;
+            padding-bottom: 8px;
+            margin-top: 58px;
+        }
+        h3 { font-size: 1.15em; margin-top: 32px; }
+        p, li { font-size: 1.01em; }
+        a { color: var(--blue); }
+        code {
+            background: #f1f3f5;
+            border-radius: 4px;
+            padding: 2px 5px;
+            font-size: 0.9em;
+        }
+        pre {
+            background: #f7f8fa;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            padding: 14px 16px;
+            overflow-x: auto;
+            font-size: 0.84em;
+            line-height: 1.5;
+        }
+        pre code { background: none; padding: 0; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0 24px;
+            font-size: 0.92em;
+        }
+        th, td {
+            border: 1px solid var(--line);
+            padding: 9px 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th { background: #f0f3f5; }
+        tr:nth-child(even) { background: #fafbfc; }
+        .dek { color: #465564; font-size: 1.17em; max-width: 820px; }
+        .authors { color: var(--muted); font-style: italic; margin: 12px 0 18px; }
+        .links { margin: 0 0 34px; }
+        .links a {
+            display: inline-block;
+            margin: 0 16px 8px 0;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin: 28px 0;
+        }
+        .metric {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 16px;
+            background: var(--surface);
+        }
+        .metric strong { display: block; color: #173b59; font-size: 1.55em; line-height: 1.15; }
+        .metric span { display: block; color: var(--muted); margin-top: 6px; font-size: 0.9em; }
+        .callout {
+            border-left: 4px solid var(--blue);
+            background: var(--blue-soft);
+            padding: 13px 16px;
+            margin: 18px 0;
+        }
+        .callout.success { border-left-color: var(--green); background: var(--green-soft); }
+        .callout.warning { border-left-color: var(--orange); background: var(--orange-soft); }
+        .callout.negative { border-left-color: var(--red); background: var(--red-soft); }
+        .toc {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 17px 22px;
+            margin: 30px 0;
+        }
+        .toc ol { columns: 2; margin-bottom: 0; }
+        .toc a { text-decoration: none; }
+        .track-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 22px 0;
+        }
+        .track {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 17px 18px;
+        }
+        .track h3 { margin-top: 0; }
+        .track-a { border-top: 4px solid var(--green); }
+        .track-b { border-top: 4px solid var(--orange); }
+        .pipeline {
+            background: #f4f8fb;
+            border: 1px solid #d5e3ee;
+            border-radius: 7px;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 0.84em;
+            line-height: 1.55;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        .step {
+            display: inline-block;
+            min-width: 29px;
+            height: 29px;
+            border-radius: 50%;
+            background: #273e52;
+            color: #fff;
+            text-align: center;
+            line-height: 29px;
+            margin-right: 8px;
+            font-size: 0.82em;
+        }
+        .small { color: var(--muted); font-size: 0.9em; }
+        .nowrap { white-space: nowrap; }
+        footer {
+            border-top: 1px solid var(--line);
+            margin-top: 60px;
+            padding-top: 20px;
+            color: var(--muted);
+            font-size: 0.9em;
+        }
+        @media (max-width: 720px) {
+            body { padding: 16px 17px 50px; }
+            h1 { font-size: 1.82em; }
+            nav { text-align: left; margin-bottom: 30px; }
+            nav a { margin: 0 15px 0 0; }
+            .metric-grid, .track-grid { grid-template-columns: 1fr; }
+            .toc ol { columns: 1; }
+            table { display: block; overflow-x: auto; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About</a>
+        <a href="research.html">Research</a>
+        <a href="blogs.html">Blogs</a>
+    </nav>
+
+    <main>
+        <h1>Distilling Agentic Software Engineering into Qwen3-8B</h1>
+        <p class="dek">Two trace pipelines, one end-to-end study: what transfers from Kimi-K3's
+        grader-verified reasoning-and-action trajectories, what changes when Claude Fable supplies
+        only observable behavior, and how we made the whole data &rarr; SFT &rarr; evaluation loop
+        reproducible.</p>
+        <p class="authors">Cheng Luo &mdash; August 2026</p>
+        <div class="links">
+            <a href="https://github.com/wdlctc/bedrock-kimi-distill">Fable pipeline code</a>
+            <a href="https://huggingface.co/datasets/Linz99/kimi-k3-scaleswe-distill-traces">Kimi trace dataset</a>
+            <a href="#reproduce">Reproduction recipe</a>
+        </div>
+
+        <div class="metric-grid">
+            <div class="metric">
+                <strong>25.0%</strong>
+                <span>final direct-Kimi Scale-SWE held-out pass@1, versus 1.1% for base</span>
+            </div>
+            <div class="metric">
+                <strong>7 / 83</strong>
+                <span>Fable+Kimi strict held-out solves, versus 0/83 for base</span>
+            </div>
+            <div class="metric">
+                <strong>~450 traces</strong>
+                <span>where the direct-Kimi scaling curve became statistically flat</span>
+            </div>
+        </div>
+
+        <div class="callout warning">
+            <strong>The central distinction.</strong> There are two different experiments in this
+            article. In Track A, Kimi-K3 produces both the action trajectory and the reasoning field.
+            In Track B, Claude Fable produces the actions, while Kimi-K3 or GPT-5.6-luna writes a
+            post-hoc explanation from observable context. Track B rationales are permanently labeled
+            <code>synthetic_rationale_not_teacher_cot</code>. They are not Fable's hidden reasoning,
+            and Track A's 25% result must not be attributed to them.
+        </div>
+
+        <div class="toc">
+            <strong>Contents</strong>
+            <ol>
+                <li><a href="#question">The question and the two tracks</a></li>
+                <li><a href="#architecture">End-to-end architecture</a></li>
+                <li><a href="#track-a">Track A: direct Kimi-K3 traces</a></li>
+                <li><a href="#track-b">Track B: Fable + synthetic rationale</a></li>
+                <li><a href="#integrity">Causal integrity and provenance</a></li>
+                <li><a href="#training">The SFT recipe</a></li>
+                <li><a href="#evaluation">Evaluation without fooling ourselves</a></li>
+                <li><a href="#operations">What broke in production</a></li>
+                <li><a href="#lessons">What actually transfers</a></li>
+                <li><a href="#reproduce">Compact reproduction recipe</a></li>
+            </ol>
+        </div>
+
+        <h2 id="question"><span class="step">1</span>The question and the two tracks</h2>
+
+        <p>Software-engineering agents do not answer once. They inspect a repository, form a plan,
+        call <code>bash</code>, read the output, edit files, run tests, revise the patch and only then
+        produce a final answer. Distilling this behavior is therefore different from distilling a
+        static instruction-response dataset. The object being transferred is a long, tool-coupled
+        policy.</p>
+
+        <p>We asked how much of that policy could be transferred into <strong>Qwen3-8B</strong> with
+        ordinary offline supervised fine-tuning. Because the strongest teachers were black-box APIs,
+        logits and on-policy white-box distillation were unavailable. Full trajectories were the
+        practical interface.</p>
+
+        <div class="track-grid">
+            <section class="track track-a">
+                <h3>Track A &mdash; direct teacher traces</h3>
+                <p><strong>Kimi-K3</strong> solves Scale-SWE tasks in Docker and returns actions plus a
+                teacher-supplied reasoning field. We retain only grader-verified solutions and train
+                Qwen3-8B on the resulting assistant turns.</p>
+                <p><strong>Question:</strong> how far does verified native teacher data scale?</p>
+            </section>
+            <section class="track track-b">
+                <h3>Track B &mdash; behavior plus annotation</h3>
+                <p><strong>Claude Fable</strong> supplies observable actions through Amazon Bedrock,
+                but no teacher reasoning. A second model writes a causal, post-hoc rationale for each
+                already-chosen action without seeing the future.</p>
+                <p><strong>Question:</strong> can synthetic explanations recover the same transfer?</p>
+            </section>
+        </div>
+
+        <div class="callout">
+            This is not a controlled one-variable comparison. Track A uses reward-positive traces;
+            the final Track B run contains both solved and unsolved behavior. The teachers, data
+            policies and rationale provenance all differ. The comparison is diagnostic, not a causal
+            claim that one model is intrinsically better than another.
+        </div>
+
+        <h2 id="architecture"><span class="step">2</span>End-to-end architecture</h2>
+
+        <div class="pipeline">Scale-SWE task + isolated Docker repository
+        |
+        +-------------------- Track A --------------------+
+        |                                                 |
+        |  Kimi-K3 actions + teacher-supplied reasoning   |
+        |  grader reward==1                               |
+        |                                                 v
+        +-------------------- Track B -----------> canonical trace schema
+                                                          |
+           OpenAI-compatible agent harness                |
+                         |                                |
+           Bedrock Converse bridge                        |
+                         |                                |
+             Claude Fable actions                         |
+                         |                                |
+             append-only raw traces                       |
+                         |                                |
+       prefix-only synthetic rationale                    |
+       (Kimi-K3 or GPT-5.6-luna)                          |
+                         +--------------------------------+
+                                                          |
+                         observable hash + tool closure + future-overlap gate
+                                                          |
+                                           frozen {messages, tools, provenance}
+                                                          |
+                                    Qwen3-8B full-parameter SFT, assistant-only loss
+                                                          |
+                                        vLLM base/distilled paired evaluation
+                                                          |
+                                 Scale-SWE held-out + SWE-bench cross-benchmark</div>
+
+        <p>Both tracks converge on the same training interface: message sequences, tool definitions
+        and assistant reasoning/action turns. That common interface is useful, but it can hide a
+        semantic difference. Track A's reasoning belongs to the model that chose the action. Track B's
+        rationale is an annotation of an action chosen by a different model. Preserving that distinction
+        in every exported row is a first-class data requirement.</p>
+
+        <h2 id="track-a"><span class="step">3</span>Track A: direct Kimi-K3 traces</h2>
+
+        <h3>3.1 Collection and filtering</h3>
+        <p>Kimi-K3 runs as a <code>bash</code>+<code>edit</code> agent over real GitHub pull-request tasks.
+        The task harness executes its patch inside the task image and hidden tests produce a binary
+        solved reward. The retained data is therefore selected by the final software outcome rather
+        than by a separate reward model.</p>
+
+        <pre><code>uv run --no-sync eval scaleswe_v1 \
+  -m kimi-k3 \
+  --env.agent.runtime.type docker \
+  --client.base-url http://127.0.0.1:8787/v1 \
+  --client.api-key-var OR_PROXY_KEY \
+  --env.timeout.episode 900 \
+  --sampling.max-tokens 8192 \
+  -s True -n 3000 -c 12 \
+  --no-push -o traces/k3-run1
+
+uv run --no-sync python conv_traces_to_sft.py \
+  traces/k3-run1 --min-reward 1.0 \
+  -o sft_data/k3_ours_993</code></pre>
+
+        <p>The conversion keeps completed, non-error traces with
+        <code>rewards.solved.score == 1</code>, preserves tool calls and renders the returned
+        <code>reasoning_content</code> through Qwen3's thinking format. The final 993-trace dataset
+        contains about 26.6M tokens. A typical trace was long: roughly 25k tokens, 30 assistant turns
+        and 40 tool calls at the median.</p>
+
+        <h3>3.2 The scaling curve</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Training traces</th>
+                    <th>Scale-SWE held-out: distilled vs. base</th>
+                    <th>SWE-bench Verified</th>
+                    <th>Interpretation</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>31</td><td>~0% vs. ~4%</td><td>&mdash;</td><td>Pipeline smoke test; no measurable transfer</td></tr>
+                <tr><td>163</td><td>5.0% vs. 0.7%</td><td>7.9% vs. 4.3%</td><td>First consistent positive result</td></tr>
+                <tr><td>360</td><td>11.8% (13/110) vs. 0.9% (1/115)</td><td>4.3% vs. 2.1%</td><td>~13&times;; Fisher p&lt;0.001</td></tr>
+                <tr><td>454</td><td>25.4% (36/142) vs. 0.7% (1/141)</td><td>&mdash;</td><td>Self-collected-only provenance check</td></tr>
+                <tr><td><strong>993</strong></td><td><strong>25.0% (45/180) vs. 1.1% (2/186)</strong></td><td><strong>9.2% vs. 4.3%</strong></td><td><strong>Final self-collected run</strong></td></tr>
+            </tbody>
+        </table>
+
+        <div class="callout success">
+            <strong>What the curve says.</strong> The gain emerges between 31 and 163 traces, grows
+            strongly through a few hundred, and then flattens. On the same 137 held-out tasks, the
+            454-trace and 993-trace students solved 25.0% and 27.6%, respectively&mdash;a statistically
+            flat difference. The defensible saturation point is around 450 traces, not that every run
+            after exactly 450 must be identical.
+        </div>
+
+        <p>The 454-trace run matters because it removed a provenance concern in an earlier mixed-source
+        dataset. Every retained trajectory in that run was collected by the same pipeline and verified
+        as Kimi-K3. Its 36 solved tasks against the base model's 1 show that the result did not depend on
+        external trace contributions.</p>
+
+        <h2 id="track-b"><span class="step">4</span>Track B: Claude Fable behavior plus synthetic rationale</h2>
+
+        <h3>4.1 Bridging the agent harness to Bedrock</h3>
+        <p>The evaluation harness speaks an OpenAI-compatible message and tool schema. A local bridge
+        converts assistant tool calls to Bedrock <code>toolUse</code> blocks, observations to
+        <code>toolResult</code> blocks, and converts Fable's response back without losing call IDs. The
+        behavior trace&mdash;actions, edits, observations and final answer&mdash;is appended to immutable
+        JSONL before any rationale is added.</p>
+
+        <pre><code>scripts/start_bedrock_proxy.sh
+
+uv run eval scaleswe \
+  -m claude-fable-5 \
+  --env.agent.runtime.type docker \
+  --client.base-url http://127.0.0.1:8790/v1 \
+  --client.api-key-var LOCAL_DUMMY_KEY \
+  --env.agent.max-turns 30 \
+  --env.timeout.episode 1800 \
+  --sampling.max-tokens 8192 \
+  --no-push -n 20 -c 2 -o runs/fable-calibration</code></pre>
+
+        <p>We calibrated at 2 tasks with concurrency 1, then 20 tasks with concurrency 2, before a
+        timed campaign. The turn and episode caps are important: each agent turn replays a growing
+        context, so an apparently ordinary trajectory can develop a very expensive token tail.</p>
+
+        <h3>4.2 Reconstructing a rationale without looking into the future</h3>
+        <p>For assistant node <em>i</em>, the annotator receives only:</p>
+        <ol>
+            <li>the root-to-node ancestor history before node <em>i</em>;</li>
+            <li>the action at node <em>i</em> that Fable already chose;</li>
+            <li>the available tool specifications.</li>
+        </ol>
+        <p>It does not receive later tool output, later actions, the final answer, hidden test results or
+        grader feedback. The request asks for one to four decision-relevant sentences explaining why
+        the recorded action is a reasonable next move. The annotation cannot change that action.</p>
+
+        <pre><code>uv run recover-rationales \
+  raw/traces.snapshot.jsonl \
+  enriched/traces.with-kimi-rationales.jsonl \
+  --include-unsolved --resume \
+  --concurrency 8 --max-tokens 500 \
+  --timeout-seconds 300 --retries 12
+
+uv run validate-distill-traces \
+  enriched/traces.with-kimi-rationales.jsonl \
+  --source raw/traces.snapshot.jsonl \
+  --report enriched/validation-report.json \
+  --include-unsolved
+
+uv run export-distill-sft \
+  enriched/traces.with-kimi-rationales.jsonl \
+  dataset/sft-all-rewards --parquet --include-unsolved</code></pre>
+
+        <p>The frozen Kimi-annotated snapshot contained <strong>829</strong> deduplicated, fully recovered
+        rows: 689 reward-positive and 140 reward-zero. Unlike Track A, the final Track B SFT run included
+        both outcomes. This is useful for studying observable behavior, but it also means that a direct
+        numerical comparison between tracks mixes rationale provenance with training-data selection.</p>
+
+        <h3>4.3 The result: in-distribution transfer, weak generalization</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Training data</th>
+                    <th>Scale-SWE strict held-out</th>
+                    <th>Cross-benchmark / reliability</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Fable behavior + Kimi-K3 synthetic rationale<br><span class="small">829 all-reward rows</span></td>
+                    <td><strong>7/83 vs. base 0/83</strong><br>+8.43 percentage points; a relative multiplier is undefined because the base solved zero</td>
+                    <td>SWE-bench: <strong>1/100 vs. base 5/100</strong><br>46 timeouts vs. 14</td>
+                </tr>
+                <tr>
+                    <td>Fable behavior + GPT-5.6-luna synthetic rationale<br><span class="small">459-row snapshot</span></td>
+                    <td><strong>3/71 vs. base 1/71</strong><br>4.2% vs. 1.4%; +2.8 percentage points</td>
+                    <td>46/200 timeouts vs. base 20/200<br>23% vs. 10%</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="callout negative">
+            <strong>Negative result, not a footnote.</strong> The Fable+Kimi student improved on the
+            source distribution but regressed on the no-overlap SWE-bench run and timed out much more
+            often. The OpenAI-annotated variant transferred even less in-distribution and also increased
+            timeouts. Synthetic rationale was therefore not a drop-in replacement for the teacher-supplied
+            reasoning in Track A.
+        </div>
+
+        <p>A plausible interpretation is that the post-hoc rationales taught longer or more brittle
+        deliberation patterns aligned with Scale-SWE, increasing rollout length without reliably
+        improving cross-repository generalization. That is an inference from the pass rates and timeout
+        counts, not a proven causal mechanism. A controlled ablation would hold behavior traces, reward
+        policy, token budget and training exposure fixed while changing only the rationale source.</p>
+
+        <h2 id="integrity"><span class="step">5</span>Causal integrity and provenance</h2>
+
+        <p>Plausible prose is easy to generate. Proving that the new prose did not rewrite the behavior
+        trace or leak the future is the substantive data-engineering problem.</p>
+
+        <table>
+            <thead><tr><th>Gate</th><th>Invariant</th><th>Failure prevented</th></tr></thead>
+            <tbody>
+                <tr><td>Observable SHA-256</td><td>Digest before and after annotation must match</td><td>Changed content, calls, arguments, results or graph topology</td></tr>
+                <tr><td>Ancestor-only prefix</td><td>Walk parent pointers from root to current node</td><td>Future or sibling-branch leakage</td></tr>
+                <tr><td>Tool-call closure</td><td>Every result has a call; every call receives a result</td><td>Broken training conversations</td></tr>
+                <tr><td>Future-overlap scan</td><td>No exact 12-token span shared with later observable text</td><td>Copied patches, results or final answers</td></tr>
+                <tr><td>Complete-turn gate</td><td>Every sampled assistant node has an accepted rationale</td><td>Partially enriched traces entering SFT</td></tr>
+                <tr><td>Immutable provenance</td><td>Source, model, reward, IDs and digest stay with every row</td><td>Synthetic annotation being mistaken for teacher reasoning</td></tr>
+            </tbody>
+        </table>
+
+        <p>If a rationale overlaps later text, it is regenerated with a more abstract instruction that
+        still does not reveal the matching future content. After repeated failure, the trace is rejected.
+        Raw traces remain immutable; enrichment always writes a new file. Snapshot construction writes
+        atomically and deduplicates by task and trace identity, so an interrupted append cannot expose a
+        partial training corpus.</p>
+
+        <pre><code>{
+  "messages": [...],
+  "tools": "[...]",
+  "provenance": {
+    "episode_id": "...",
+    "trace_id": "...",
+    "branch_index": 0,
+    "reward": 1.0,
+    "teacher_model": "claude-fable-5",
+    "rationale_source": "synthetic_rationale_not_teacher_cot",
+    "rationale_model": "kimi-k3",
+    "observable_sha256": "..."
+  }
+}</code></pre>
+
+        <h2 id="training"><span class="step">6</span>The SFT recipe</h2>
+
+        <p>Both tracks used full-parameter Qwen3-8B SFT with assistant-only loss. Long agent traces drove
+        nearly every systems choice: a 49,152-token training sequence, micro-batch size 1, full activation
+        checkpointing and FlashAttention-2. Qwen3's renderer preserved the reasoning field as thinking
+        content while tool calls stayed in the same schema used at evaluation time.</p>
+
+        <pre><code>max_steps = 372
+
+[deployment]
+num_gpus = 4
+
+[ckpt]
+interval = 45
+weights_only = true
+
+[model]
+name = "Qwen/Qwen3-8B"
+seq_len = 49152
+attn = "flash_attention_2"
+
+[model.ac]
+mode = "full"
+
+[data]
+name = "sft_data/k3_ours_993"
+seq_len = 49152
+batch_size = 8
+micro_batch_size = 1
+
+[renderer]
+name = "qwen3"
+enable_thinking = true
+
+[optim]
+lr = 1e-5</code></pre>
+
+        <p>The final direct-Kimi run used three epochs: 372 optimizer steps on four H100s, roughly
+        36 seconds per step and about four hours total. Training loss fell from 1.25 to 0.38. On an
+        aggressively reclaimed cluster, frequent weight-only checkpoints were the difference between a
+        recoverable run and losing hours to a checkpoint interrupted mid-write.</p>
+
+        <div class="callout warning">
+            The batch size must be divisible by the training world size, and weight-only checkpoints are
+            optimized for producing a recent servable model, not for resuming optimizer state. Choose
+            the checkpoint policy according to the failure mode you actually need to survive.
+        </div>
+
+        <h2 id="evaluation"><span class="step">7</span>Evaluation without fooling ourselves</h2>
+
+        <h3>7.1 Same harness, paired tasks</h3>
+        <p>Base and distilled models are served with the same context limit, tool-call parser, reasoning
+        parser, system prompt and Docker task runtime. Sampling is unshuffled so both models receive the
+        same first <em>N</em> tasks. The strict comparison uses only the task intersection that both runs
+        completed.</p>
+
+        <pre><code>vllm serve weights/step_372 \
+  --served-model-name qwen3-distilled \
+  --tensor-parallel-size 2 \
+  --max-model-len 40960 \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --reasoning-parser qwen3
+
+bash eval_student.sh scaleswe_v1 qwen3-base \
+  http://server:8101/v1 eval/scale-base 200 6
+bash eval_student.sh scaleswe_v1 qwen3-distilled \
+  http://server:8100/v1 eval/scale-distilled 200 6</code></pre>
+
+        <h3>7.2 Decontamination</h3>
+        <p>Every training task's problem statement is hashed. An evaluation task with a matching hash is
+        excluded before pass@1 is reported. Scale-SWE measures held-out in-distribution transfer;
+        SWE-bench Verified provides a second benchmark with no task overlap. Neither alone is enough:
+        the first can reward narrow adaptation, while the second may be noisier or differently distributed.</p>
+
+        <h3>7.3 Reliability is part of the metric</h3>
+        <p>A model that solves more completed episodes by thinking longer can still be worse operationally
+        if it doubles the timeout rate. We therefore report graded tasks, solves and failure categories,
+        not just the percentage among successful completions. This is especially important for Track B,
+        where synthetic rationale students timed out much more often.</p>
+
+        <h2 id="operations"><span class="step">8</span>What broke in production</h2>
+
+        <p>The ML recipe was short. The campaign survived because the surrounding system treated every
+        external dependency as unreliable.</p>
+
+        <table>
+            <thead><tr><th>Failure</th><th>Observed symptom</th><th>Mitigation</th></tr></thead>
+            <tbody>
+                <tr><td>Teacher gateway degradation</td><td>503/504 storms; one high-concurrency attempt lost 68% of rollouts</td><td>Cross-key retry, backoff, low concurrency and health-gated collection windows</td></tr>
+                <tr><td>Docker images fill disk</td><td>Mass evaluation errors and <code>No space left on device</code></td><td>Disk guard and automatic image pruning below a free-space floor</td></tr>
+                <tr><td>GPU reclaim during save</td><td>Random SIGTERM and corrupted checkpoint metadata</td><td>Frequent lightweight checkpoints plus server watchdogs</td></tr>
+                <tr><td>KV-cache exhaustion</td><td>vLLM starts returning 500s during long concurrent rollouts</td><td>Reduce evaluation concurrency from 12 to 6</td></tr>
+                <tr><td>Unbounded context replay</td><td>Single Fable episode reaches hundreds of thousands of input tokens</td><td>Explicit turn, episode-time and generation caps</td></tr>
+                <tr><td>Resume/config mismatch</td><td>Resumed campaign silently reuses saved settings</td><td>Treat saved config as immutable campaign state; edit deliberately before resume</td></tr>
+            </tbody>
+        </table>
+
+        <p>The unattended collectors used persisted wall-clock deadlines, append-only logs and idempotent
+        workers. Every minute, a snapshot worker rebuilt the canonical corpus; rationale recovery skipped
+        completed envelope IDs; failed annotations went to a sidecar; and a final pass froze a manifest,
+        JSONL and Parquet dataset for training.</p>
+
+        <h2 id="lessons"><span class="step">9</span>What actually transfers</h2>
+
+        <ol>
+            <li><strong>Verified trajectories can teach the shape of agent work.</strong> A few hundred
+            successful examples were enough for Qwen3-8B to learn a substantially better loop of inspect,
+            reason, call tools, edit and test.</li>
+            <li><strong>Quality filtering beats raw volume.</strong> Direct Kimi distillation improved
+            rapidly on grader-positive traces and then saturated; doubling data after the plateau did not
+            double capability.</li>
+            <li><strong>Reasoning provenance matters.</strong> A rationale written after an action is not
+            semantically equivalent to the reasoning supplied by the model that chose the action, even if
+            both fit into the same JSON field.</li>
+            <li><strong>In-distribution gain is not generalization.</strong> Fable+Kimi improved on strict
+            held-out Scale-SWE but regressed on SWE-bench and reliability. The cross-benchmark result changes
+            the conclusion.</li>
+            <li><strong>Timeouts are model behavior.</strong> Longer synthetic reasoning can change completion
+            rates enough that pass@1 without failure counts becomes misleading.</li>
+            <li><strong>Provenance should be impossible to drop accidentally.</strong> Teacher, annotator,
+            reward policy, IDs and observable hash belong in every exported row, not only in a dataset card.</li>
+            <li><strong>Infrastructure determines whether the science is observable.</strong> Health gates,
+            atomic snapshots, resumable enrichment, disk guards and frequent checkpoints were experimental
+            controls, not mere deployment polish.</li>
+        </ol>
+
+        <div class="callout success">
+            <strong>Bottom line.</strong> Offline trace SFT can turn Qwen3-8B into a meaningfully stronger
+            coding agent with only hundreds of high-quality trajectories. The strongest result came from
+            grader-verified Kimi-K3 action-and-reasoning traces: 25.0% versus 1.1% on held-out Scale-SWE and
+            9.2% versus 4.3% on SWE-bench Verified. Observable Fable behavior plus causal synthetic rationale
+            showed narrower transfer and worse reliability. Synthetic explanation is useful data, but it
+            should not be presented as recovered teacher thought or assumed to substitute for teacher-supplied
+            reasoning.
+        </div>
+
+        <h2 id="reproduce"><span class="step">10</span>Compact reproduction recipe</h2>
+
+        <ol>
+            <li><strong>Install the harness and training stack.</strong> Use Docker-capable Scale-SWE,
+            Prime-RL, Qwen3-8B, FlashAttention-2 and enough disk for task images.</li>
+            <li><strong>Calibrate teacher access.</strong> Run 2 tasks at concurrency 1, then 20 at concurrency
+            2. Measure success, token tail, latency, disk growth and cost before scaling.</li>
+            <li><strong>Collect immutable traces.</strong> Store attempts and errors, not just successes.
+            Bound turns, episode time, output tokens and concurrency.</li>
+            <li><strong>Choose an explicit data policy.</strong> Track A uses completed reward-positive traces.
+            If unsolved traces are included, record that choice in the manifest and training config.</li>
+            <li><strong>If reasoning is synthetic, make it causal by construction.</strong> Pass only the
+            ancestor prefix and chosen action; hash observables; check tool closure and future overlap.</li>
+            <li><strong>Freeze and deduplicate.</strong> Export a versioned JSONL/Parquet snapshot with full
+            provenance. Never train directly from a live, growing campaign directory.</li>
+            <li><strong>Train assistant-only at the real trace length.</strong> Preserve tool and reasoning
+            formats, use activation checkpointing, and save often enough for the cluster's reclaim behavior.</li>
+            <li><strong>Evaluate base and distilled on paired tasks.</strong> Decontaminate against every
+            training problem, report failures and timeouts, and add a no-overlap second benchmark.</li>
+            <li><strong>Measure a scaling curve.</strong> A pilot validates plumbing; it does not establish a
+            capability result. Stop buying data when additional scale becomes statistically flat.</li>
+        </ol>
+
+        <h3>Artifacts</h3>
+        <ul>
+            <li><a href="https://github.com/wdlctc/bedrock-kimi-distill">bedrock-kimi-distill</a>: Bedrock bridge, causal rationale recovery, validation, SFT export and evaluation helpers.</li>
+            <li><a href="https://huggingface.co/datasets/Linz99/kimi-k3-scaleswe-distill-traces">Linz99/kimi-k3-scaleswe-distill-traces</a>: direct Kimi-K3 training snapshots at multiple scales.</li>
+            <li><a href="https://github.com/PrimeIntellect-ai/prime-rl">Prime-RL</a>: the SFT training stack used for Qwen3-8B.</li>
+        </ul>
+    </main>
+
+    <footer>
+        This article consolidates the earlier trace-collection post, results post and reproduction
+        runbook into one canonical account. Experiment denominators are kept explicit because different
+        runs completed different task intersections.
+    </footer>
+</body>
+</html>

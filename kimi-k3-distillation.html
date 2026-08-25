@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="canonical" href="https://wdlctc.github.io/agentic-swe-distillation.html">
     <title>Distilling Kimi-K3 into Qwen3-8B: a ~13x Agentic-SWE Gain, and Where It Plateaus</title>
     <style>
         body {
@@ -83,12 +84,19 @@
         <a href="blogs.html">Blogs</a>
     </nav>
 
+    <div class="warning">
+        <strong>Consolidated article.</strong> This results note is preserved for old links. The final
+        993-trace result, the separate Fable experiment and the reproduction guide now live in
+        <a href="agentic-swe-distillation.html#track-a">one canonical article</a>.
+    </div>
+
     <h1>Distilling Kimi-K3 into Qwen3-8B: a ~13&times; Agentic-SWE Gain, and Where It Plateaus</h1>
 
     <p class="authors">Cheng Luo &mdash; August 2026</p>
 
     <div class="links">
-        <a href="kimi-k3-distillation-runbook.html">Runbook (how to reproduce)</a>
+        <a href="agentic-swe-distillation.html">Consolidated Study</a>
+        <a href="agentic-swe-distillation.html#reproduce">Reproduction Recipe</a>
         <a href="https://huggingface.co/datasets/Linz99/kimi-k3-scaleswe-distill-traces">Dataset (HF)</a>
     </div>
 
@@ -96,7 +104,7 @@
 
     <h2>TL;DR</h2>
     <div class="key-finding">
-        <strong>Teacher</strong> = Kimi K3 (Moonshot, 2.8T MoE) solving real GitHub-PR tasks (<code>Scale-SWE-Verified</code>) as a <code>bash</code>+<code>edit</code> agent. <strong>Student</strong> = Qwen3-8B. <strong>Method</strong> = offline SFT on <em>only</em> the grader-verified (reward==1) traces. On held-out, contamination-controlled tasks the distilled model beats base <strong>~13&ndash;36&times; in-distribution</strong> (11.8% vs 0.9%; and up to 25.4% vs 0.7% on a fully self-collected run), scaling monotonically with data and <strong>saturating around ~360 traces</strong>. The direction holds on an independent benchmark (<code>swebench_verified</code>), and reproduces with <strong>zero dependence on external data</strong>.
+        <strong>Teacher</strong> = Kimi K3 (Moonshot, 2.8T MoE) solving real GitHub-PR tasks (<code>Scale-SWE-Verified</code>) as a <code>bash</code>+<code>edit</code> agent. <strong>Student</strong> = Qwen3-8B. <strong>Method</strong> = offline SFT on <em>only</em> the grader-verified (reward==1) traces. On held-out, contamination-controlled tasks the distilled model beats base <strong>~13&ndash;36&times; in-distribution</strong> (11.8% vs 0.9%; and up to 25.4% vs 0.7% on a fully self-collected run), scaling monotonically with data and <strong>saturating around ~450 traces</strong>. The direction holds on an independent benchmark (<code>swebench_verified</code>), and reproduces with <strong>zero dependence on external data</strong>.
     </div>
 
     <h2>Why offline SFT trace-distillation</h2>
