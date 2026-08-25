@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A reproducible pipeline for collecting black-box agent traces from Bedrock, adding causal synthetic rationales with Kimi-K3, validating provenance, and exporting Qwen3 SFT data.">
+    <title>From Black-Box Agent Traces to Distillation Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.65;
+            color: #333;
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        nav { text-align: right; margin-bottom: 20px; }
+        nav a { margin-left: 15px; text-decoration: none; color: #0066cc; }
+        h1, h2, h3 { color: #2c3e50; }
+        h1 { font-size: 1.8em; line-height: 1.25; }
+        h2 { border-bottom: 2px solid #eee; padding-bottom: 6px; margin-top: 42px; }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #f8f8f8;
+            border: 1px solid #e8e8e8;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 0.84em;
+            line-height: 1.45;
+        }
+        pre code { background: none; padding: 0; }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0; font-size: 0.93em; }
+        th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; vertical-align: top; }
+        th { background-color: #f2f2f2; }
+        tr:nth-child(even) { background-color: #fafafa; }
+        .authors { color: #666; font-style: italic; margin-bottom: 20px; }
+        .links { margin-bottom: 25px; }
+        .links a { margin-right: 15px; text-decoration: none; color: #0066cc; font-weight: bold; }
+        .pipeline {
+            background-color: #f4f8fb;
+            border: 1px solid #d6e4f0;
+            border-radius: 6px;
+            padding: 14px;
+            font-family: monospace;
+            font-size: 0.84em;
+            white-space: pre;
+            overflow-x: auto;
+            line-height: 1.5;
+        }
+        .key-finding {
+            background-color: #eafaf1;
+            border-left: 4px solid #2ecc71;
+            padding: 11px 14px;
+            margin: 14px 0;
+        }
+        .warning {
+            background-color: #fdf2e9;
+            border-left: 4px solid #e67e22;
+            padding: 11px 14px;
+            margin: 14px 0;
+        }
+        .note {
+            background-color: #eef6fc;
+            border-left: 4px solid #3498db;
+            padding: 11px 14px;
+            margin: 14px 0;
+        }
+        .toc { background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 12px 20px; }
+        .toc a { text-decoration: none; color: #0066cc; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About</a>
+        <a href="research.html">Research</a>
+        <a href="blogs.html">Blogs</a>
+    </nav>
+
+    <h1>From Black-Box Agent Traces to Distillation Data</h1>
+    <p class="authors">Cheng Luo &mdash; August 2026</p>
+    <div class="links">
+        <a href="kimi-k3-distillation.html">Distillation Results</a>
+        <a href="kimi-k3-distillation-runbook.html">K3 Runbook</a>
+    </div>
+
+    <p>What do you do when a strong teacher API can solve software-engineering tasks and expose its
+    tool calls, but does <em>not</em> return chain-of-thought? We built a two-model data pipeline:
+    <strong>Claude Fable on Amazon Bedrock</strong> executes the actual agent trajectory, then
+    <strong>Kimi-K3</strong> writes a short, causal explanation for each already-recorded assistant
+    action. The result is a provenance-rich SFT dataset for Qwen3-8B.</p>
+
+    <div class="warning">
+        <strong>The generated text is not Fable's hidden chain-of-thought.</strong> It is a post-hoc,
+        synthetic rationale inferred from observable behavior. Every record is permanently labeled
+        <code>synthetic_rationale_not_teacher_cot</code>. Calling it “recovered CoT” would overstate
+        what the data contains.
+    </div>
+
+    <div class="toc">
+        <strong>Contents</strong><br>
+        <a href="#architecture">1. Architecture</a> &middot;
+        <a href="#collect">2. Collecting traces</a> &middot;
+        <a href="#recover">3. Causal rationale synthesis</a> &middot;
+        <a href="#validate">4. Validation</a> &middot;
+        <a href="#export">5. SFT export</a> &middot;
+        <a href="#unattended">6. Running unattended</a> &middot;
+        <a href="#lessons">7. Lessons</a>
+    </div>
+
+    <h2 id="architecture">1. Architecture</h2>
+    <div class="pipeline">Scale-SWE task + isolated Docker repository
+        | OpenAI-compatible messages and tools
+        v
+local bridge (:8790)  -- converts chat/tool wire format
+        | Amazon Bedrock Converse: toolUse / toolResult
+        v
+Claude Fable          -- chooses actions; grader records reward
+        |
+        v
+append-only raw traces.jsonl
+        |
+        +--> atomic canonical snapshot + task/trace deduplication
+        |
+        v
+Kimi-K3 prefix-only synthetic rationale for every assistant action
+        |
+        v
+observable hash + tool integrity + future-overlap validation
+        |
+        v
+train.jsonl / train.parquet: {messages, tools, provenance}
+        |
+        v
+Qwen3-8B SFT + held-out base-vs-distilled evaluation</div>
+
+    <p>The two models have deliberately separate jobs. Fable is the <em>behavior teacher</em>: its tool
+    calls, edits, observations and final answer are the trajectory we want to imitate. Kimi is only a
+    <em>rationale annotator</em>. It must never change an action or invent a new one.</p>
+
+    <h2 id="collect">2. Collecting the observable trajectory</h2>
+
+    <h3>2.1 Keep credentials out of code and logs</h3>
+    <p>The Bedrock bearer key lives in a private file outside the repository, with mode 0600. The
+    bridge reads the file at startup; the harness itself receives only a dummy local key.</p>
+
+    <pre><code>install -m 700 -d ~/.config/agent-distill
+read -rsp 'Bedrock key: ' KEY_INPUT; echo
+printf '%s' "$KEY_INPUT" &gt; ~/.config/agent-distill/bedrock.key
+unset KEY_INPUT
+chmod 600 ~/.config/agent-distill/bedrock.key
+
+export AWS_BEARER_TOKEN_BEDROCK_FILE=~/.config/agent-distill/bedrock.key
+export BEDROCK_MODEL_ID='us.anthropic.claude-fable-5'
+export BEDROCK_ENDPOINT='https://bedrock-runtime.&lt;region&gt;.amazonaws.com'</code></pre>
+
+    <p>The local bridge translates the OpenAI chat/tool schema used by the evaluation harness into
+    Bedrock Converse blocks. In particular, assistant tool calls become <code>toolUse</code>, tool
+    observations become <code>toolResult</code>, and the response is converted back without dropping
+    call IDs. A health endpoint validates configuration without spending tokens, while a stats
+    endpoint reports request, retry and token counts without logging prompts or secrets.</p>
+
+    <h3>2.2 Calibrate before the long run</h3>
+    <p>Agent traces are expensive and heavy-tailed. We used three stages:</p>
+    <ol>
+        <li><strong>2 tasks, concurrency 1:</strong> verify tool-call round trips and grader output.</li>
+        <li><strong>20 tasks, concurrency 2:</strong> estimate success rate, latency, token use and disk growth.</li>
+        <li><strong>Timed campaign:</strong> only after the first two stages are clean.</li>
+    </ol>
+
+    <pre><code>uv run eval scaleswe \
+  -m claude-fable-5 \
+  --env.agent.runtime.type docker \
+  --client.base-url http://127.0.0.1:8790/v1 \
+  --client.api-key-var LOCAL_DUMMY_KEY \
+  --env.agent.max-turns 30 \
+  --env.timeout.episode 1800 \
+  --sampling.max-tokens 8192 \
+  --no-push -n 20 -c 2 -o /data/fable-calibration</code></pre>
+
+    <p>We initially discovered extreme context replay: a single agent can resend a very long history
+    dozens of times. A 30-turn cap and a 15&ndash;30 minute episode timeout bound the tail without imposing
+    an arbitrary cap on the total campaign size. For the long run we kept Bedrock concurrency at 2;
+    higher concurrency was not useful enough to justify harder rate-limit and cost behavior.</p>
+
+    <h3>2.3 Preserve attempts, not just successes</h3>
+    <p>Each JSONL line is an envelope with an ID, <code>ok</code>, errors and zero or more traces. A trace
+    contains the message graph, tool definitions, calls, task identity, stop condition and grader
+    reward. We keep all attempt envelopes so infrastructure errors remain auditable. The canonical
+    data snapshot excludes only records with no sampled assistant turn.</p>
+
+    <div class="note">
+        <strong>Three counts answer three different questions:</strong> attempt count measures API/harness
+        reliability; campaign-success count measures valid completed rollouts; canonical snapshot count
+        measures unique usable traces aggregated across all runs. They are not expected to match.
+    </div>
+
+    <h2 id="recover">3. Adding causal synthetic rationales</h2>
+
+    <p>For each sampled assistant node, Kimi receives exactly two pieces of information:</p>
+    <ol>
+        <li><code>history_before_action</code>: only the ancestors of that node in the message graph;</li>
+        <li><code>chosen_action</code>: the assistant content and/or tool call that Fable actually emitted.</li>
+    </ol>
+
+    <p>It does <strong>not</strong> receive the subsequent tool result, later assistant actions, hidden test
+    outcome, grader feedback or final answer. That prevents direct future leakage. The prompt also
+    treats repository and tool text as untrusted data, not instructions, and asks for 1&ndash;4 compact,
+    decision-relevant sentences.</p>
+
+    <pre><code>uv run recover-rationales \
+  raw/traces.snapshot.jsonl \
+  enriched/traces.with-kimi-rationales.jsonl \
+  --include-unsolved \
+  --resume \
+  --concurrency 8 \
+  --max-tokens 500 \
+  --timeout-seconds 300 \
+  --retries 12</code></pre>
+
+    <p><code>--resume</code> is important: completed envelope IDs are skipped, so the recovery loop is
+    idempotent. Transient 408/429/5xx failures use bounded exponential backoff. Incomplete envelopes go
+    to a separate <code>.failed.jsonl</code> sidecar rather than contaminating the clean output.</p>
+
+    <h2 id="validate">4. Integrity and leakage validation</h2>
+
+    <p>Generating plausible prose is easy; proving that the observable trace was not altered is the
+    real data-engineering work. We apply the following gates:</p>
+
+    <table>
+        <tr><th>Gate</th><th>What it prevents</th></tr>
+        <tr><td>Observable SHA-256 before/after</td><td>Any change to content, tool name, arguments, call ID, result or graph topology</td></tr>
+        <tr><td>Ancestor-only prefix construction</td><td>Sibling-branch or future-message leakage</td></tr>
+        <tr><td>Tool-call closure</td><td>Orphan tool results and unanswered terminal calls</td></tr>
+        <tr><td>Future text overlap</td><td>A rationale copying a later tool result, patch or final answer</td></tr>
+        <tr><td>Complete-turn gate</td><td>Partially annotated traces entering SFT</td></tr>
+        <tr><td>Immutable provenance</td><td>Confusing synthetic rationale with teacher CoT</td></tr>
+    </table>
+
+    <p>The future-overlap detector flags long token sequences shared with later observable text. A
+    flagged draft is regenerated without showing Kimi the matching future text; after repeated failure,
+    the trace is rejected by default. We also recommend manually reviewing at least 50 random rows for
+    invented observations, premature knowledge of tests, copied patches and prompt-injection obedience.</p>
+
+    <h2 id="export">5. Deduplication and SFT export</h2>
+
+    <p>Every minute, the snapshot builder scans raw collection directories, skips malformed trailing
+    lines from an in-progress append, and deduplicates by <code>(task_name, trace_id)</code>. It writes to
+    a temporary file and atomically replaces the canonical snapshot, so a reader never sees a partial
+    dataset.</p>
+
+    <p>Branching message graphs are expanded root-to-leaf. Each output row has:</p>
+
+    <pre><code>{
+  "messages":  [... assistant messages include reasoning_content ...],
+  "tools":     "[...]",
+  "provenance": "{\"episode_id\": ..., \"trace_id\": ...,
+                   \"branch_index\": 0, \"reward\": 1.0,
+                   \"teacher_model\": \"claude-fable-5\",
+                   \"rationale_source\":
+                     \"synthetic_rationale_not_teacher_cot\",
+                   \"rationale_model\": \"kimi-k3\",
+                   \"observable_sha256\": \"...\"}"
+}</code></pre>
+
+    <p>We retain reward-zero traces in the canonical enriched corpus because they are useful for error
+    analysis and controlled ablations. Export policy is explicit: <code>--min-reward 1</code> yields
+    positive-only SFT, while <code>--min-reward 0</code> yields an all-rewards dataset. Never let a
+    filename silently decide this policy.</p>
+
+    <div class="key-finding">
+        A frozen training snapshot contained <strong>829</strong> deduplicated, fully recovered rows:
+        <strong>689 reward-positive</strong> and <strong>140 reward-zero</strong>. All 829 records identify
+        Fable as the behavior teacher, Kimi-K3 as the rationale annotator, and the rationale as synthetic.
+    </div>
+
+    <h2 id="unattended">6. Running for 24 hours without babysitting</h2>
+
+    <p>A reliable long run needs a wall-clock deadline, not “collect N” alone. Our wrapper persists the
+    start and deadline timestamps once, resumes the same output directory after interruption, and uses
+    a foreground timeout with a short TERM grace period. A separate recovery worker polls every 60
+    seconds, rebuilds the canonical snapshot, and annotates only new envelope IDs.</p>
+
+    <pre><code>collector (Bedrock concurrency 2)
+  -> append raw trace
+  -> update attempts/success/error counters
+
+every 60 seconds:
+  -> atomic deduplicated snapshot
+  -> recover unseen traces (Kimi concurrency 8)
+  -> validate and append clean enriched rows
+  -> record failures separately
+
+at deadline:
+  -> terminate collector gracefully
+  -> one final snapshot/recovery pass
+  -> validate full corpus
+  -> export JSONL + Parquet + manifest</code></pre>
+
+    <p>The monitor checks more than “is the service active?” Temporary systemd units can disappear while
+    child processes keep running. We cross-check fixed PIDs, file modification times, result counts,
+    recent rollout logs, active Docker containers, network activity, disk space and restart counters.</p>
+
+    <p>At one live checkpoint during the campaign, the collector had written 1,072 attempt envelopes:
+    757 completed successfully and 315 did not. The global canonical corpus contained 956 unique traces
+    with assistant turns, and the recovery worker had annotated all of them with zero failed envelopes.
+    These are operational checkpoint numbers, not a final benchmark claim; collection continued until
+    the persisted deadline.</p>
+
+    <h2 id="lessons">7. What mattered most</h2>
+    <ol>
+        <li><strong>Separate behavior from explanation.</strong> Fable's actions are authoritative; Kimi's rationale is annotation.</li>
+        <li><strong>Never call synthetic rationale “teacher CoT.”</strong> Provenance must survive every export.</li>
+        <li><strong>Make recovery causal by construction.</strong> Prompt wording alone is not a leakage guarantee.</li>
+        <li><strong>Keep raw data immutable.</strong> Enrichment always writes a new file.</li>
+        <li><strong>Count attempts, valid traces and canonical rows separately.</strong> Conflating them hides failures and duplicates.</li>
+        <li><strong>Resume at every layer.</strong> Collector, snapshot builder and rationale worker should all be idempotent.</li>
+        <li><strong>Bound the tail.</strong> Turns, episode time, generation size, retries and concurrency all need explicit caps.</li>
+        <li><strong>Validate semantics, not just JSON.</strong> Tool closure and future leakage matter more than parse success.</li>
+        <li><strong>Freeze datasets for training.</strong> A live corpus can keep growing; a model run must point to an immutable snapshot.</li>
+        <li><strong>Publish enough provenance to audit the claim.</strong> Model names, reward, IDs, branch and observable hash belong in every row.</li>
+    </ol>
+
+    <p>This design does not recover private reasoning. It does something more defensible: it turns a
+    black-box, tool-using teacher's observable behavior into a reproducible, auditable training corpus,
+    while making the synthetic part impossible to mistake for the original.</p>
+</body>
+</html>
