@@ -118,6 +118,25 @@
         <a href="kimi-k3-distillation.html">Full evaluation</a>.
     </div>
 
+    <div class="warning">
+        <strong>Negative result: GPT-5.6-luna synthetic rationales transferred weakly.</strong>
+        On a contamination-controlled Scale-SWE evaluation, the OpenAI-annotated Fable run produced
+        only a small held-out gain while substantially increasing timeouts.
+        <table>
+            <thead>
+                <tr><th>Model</th><th>Paired held-out solved</th><th>Pass@1</th><th>All-run timeouts</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Base Qwen3-8B</td><td>1/71</td><td>1.4%</td><td>20/200 (10%)</td></tr>
+                <tr><td>Fable + GPT-5.6-luna-rationale SFT</td><td>3/71</td><td>4.2%</td><td>46/200 (23%)</td></tr>
+            </tbody>
+        </table>
+        The <strong>+2.8 percentage-point</strong> held-out gain came with a <strong>2.3&times;</strong>
+        timeout rate and was materially weaker than the Kimi-rationale run. We therefore treat this
+        as weak, mixed transfer rather than a successful rationale-recovery result. These annotations
+        are labeled <code>synthetic_rationale_not_teacher_cot</code>; they are not Fable's hidden CoT.
+    </div>
+
     <div class="toc">
         <strong>Contents</strong><br>
         <a href="#architecture">1. Architecture</a> &middot;
