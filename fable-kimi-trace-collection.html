@@ -110,38 +110,38 @@
     </div>
 
     <div class="key-finding">
-        <strong>Downstream result for this Fable+Kimi pipeline.</strong> On strict held-out Scale-SWE,
-        the Kimi-rationale student improved in-distribution, but the cross-benchmark result and timeout
-        rate were negative.
+        <strong>Downstream result for this Fable+Kimi pipeline.</strong> We evaluated on a fixed set of
+        200 Scale-SWE tasks drawn from the exact 829-task SFT snapshot. This is a same-task,
+        in-sample diagnostic—not a generalization result.
         <table>
             <thead>
-                <tr><th>Evaluation</th><th>Base Qwen3-8B</th><th>Fable + Kimi-rationale SFT</th></tr>
+                <tr><th>Same-task Scale-SWE (n=200)</th><th>Base Qwen3-8B</th><th>Fable + Kimi-rationale SFT</th></tr>
             </thead>
             <tbody>
-                <tr><td>Scale-SWE strict held-out</td><td>0/83</td><td><strong>7/83 (+8.43 pp)</strong></td></tr>
-                <tr><td>SWE-bench, no overlap</td><td><strong>5/100</strong></td><td>1/100</td></tr>
-                <tr><td>SWE-bench timeouts</td><td><strong>14</strong></td><td>46</td></tr>
+                <tr><td>Solved</td><td>0/200 (0%)</td><td>0/200 (0%)</td></tr>
+                <tr><td>Episode timeouts</td><td><strong>2/200 (1%)</strong></td><td>19/200 (9.5%)</td></tr>
             </tbody>
         </table>
+        This dedicated run found no same-task gain and a higher timeout rate after SFT. It should not
+        be used as evidence of held-out or cross-repository generalization.
         The 25% direct-Kimi result belongs to a different experiment in which Kimi produced both the
         behavior and reasoning. <a href="agentic-swe-distillation.html#track-a">See the separated comparison</a>.
     </div>
 
     <div class="warning">
         <strong>Negative result: GPT-5.6-luna synthetic rationales transferred weakly.</strong>
-        On a contamination-controlled Scale-SWE evaluation, the OpenAI-annotated Fable run produced
-        only a small held-out gain while substantially increasing timeouts.
+        On the training-overlap subset of an earlier Scale-SWE evaluation, the OpenAI-annotated Fable
+        run produced only one additional solve while substantially increasing timeouts overall.
         <table>
             <thead>
-                <tr><th>Model</th><th>Paired held-out solved</th><th>Pass@1</th><th>All-run timeouts</th></tr>
+                <tr><th>Model</th><th>Paired same-task solved</th><th>Pass@1</th><th>All-run timeouts</th></tr>
             </thead>
             <tbody>
-                <tr><td>Base Qwen3-8B</td><td>1/71</td><td>1.4%</td><td>20/200 (10%)</td></tr>
-                <tr><td>Fable + GPT-5.6-luna-rationale SFT</td><td>3/71</td><td>4.2%</td><td>46/200 (23%)</td></tr>
+                <tr><td>Base Qwen3-8B</td><td>0/68</td><td>0%</td><td>20/200 (10%)</td></tr>
+                <tr><td>Fable + GPT-5.6-luna-rationale SFT</td><td>1/68</td><td>1.5%</td><td>46/200 (23%)</td></tr>
             </tbody>
         </table>
-        The <strong>+2.8 percentage-point</strong> held-out gain came with a <strong>2.3&times;</strong>
-        timeout rate and was materially weaker than the Kimi-rationale run. We therefore treat this
+        The single additional same-task solve came with a <strong>2.3&times;</strong> timeout rate. We therefore treat this
         as weak, mixed transfer rather than a successful rationale-recovery result. These annotations
         are labeled <code>synthetic_rationale_not_teacher_cot</code>; they are not Fable's hidden CoT.
     </div>
@@ -181,7 +181,7 @@ observable hash + tool integrity + future-overlap validation
 train.jsonl / train.parquet: {messages, tools, provenance}
         |
         v
-Qwen3-8B SFT + held-out base-vs-distilled evaluation</div>
+Qwen3-8B SFT + explicitly labeled same-task base-vs-distilled evaluation</div>
 
     <p>The two models have deliberately separate jobs. Fable is the <em>behavior teacher</em>: its tool
     calls, edits, observations and final answer are the trajectory we want to imitate. Kimi is only a
