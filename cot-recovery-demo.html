@@ -149,10 +149,10 @@ action_source: recorded_teacher_action</pre></div></div>
                             <div class="notice"><strong>A static page cannot keep a browser API key secret.</strong>Use a short-lived restricted Anthropic test key. It is sent only to <code>api.anthropic.com</code>, never saved to browser storage, and never inserted into copied commands.</div>
                             <div class="field"><label for="api-key">Anthropic API key <small>current page only</small></label><div class="key-row"><input id="api-key" name="anthropic-test-key" type="password" inputmode="text" autocomplete="new-password" spellcheck="false" placeholder="sk-ant-…" aria-describedby="key-hint"><button class="btn btn-secondary btn-small" id="toggle-key" type="button">Show</button><button class="btn btn-secondary btn-small" id="clear-key" type="button">Clear</button></div><p class="field-hint" id="key-hint">AWS Bedrock Bearer keys are not compatible with this endpoint.</p></div>
                             <div class="field-row">
-                                <div class="field"><label for="model">Annotator model</label><input id="model" name="model" value="claude-sonnet-5" spellcheck="false"></div>
+                                <div class="field"><label for="model">Annotator model</label><input id="model" name="model" value="claude-sonnet-5" list="model-options" spellcheck="false"><datalist id="model-options"><option value="claude-sonnet-5"></option><option value="claude-sonnet-4-6"></option><option value="claude-haiku-4-5-20251001"></option></datalist></div>
                                 <div class="field"><label for="style">Rationale length</label><select id="style" name="style"><option value="compact" selected>Compact · 2–4 sentences</option><option value="detailed">Detailed · 1–3 paragraphs</option></select></div>
                             </div>
-                            <div class="field"><label>API endpoint</label><div class="endpoint">https://api.anthropic.com/v1/messages</div></div>
+                            <div class="field"><label>Request route</label><div class="endpoint">browser → https://api.anthropic.com/v1/messages<br>GitHub Pages does not run a site backend.</div></div>
                             <div class="field"><label for="prefix">Observable conversation prefix <small>no future turns</small></label><textarea id="prefix" name="prefix">USER: parse_timeout accepts negative values, but configuration timeouts must be non-negative. Fix the parser while preserving positive-value behavior.
 
 TOOL RESULT (rg -n "parse_timeout"):
@@ -165,7 +165,7 @@ seconds = int(value)
 if seconds &lt; 0:
     raise ValueError("timeout must be non-negative")
 return seconds</textarea></div>
-                            <div class="run-actions"><button class="btn btn-primary" id="generate-btn" type="submit">Complete rationale</button><button class="btn btn-secondary btn-small" id="copy-curl" type="button">Copy safe curl</button></div>
+                            <div class="run-actions"><button class="btn btn-primary" id="generate-btn" type="submit">Complete rationale</button><button class="btn btn-secondary btn-small" id="test-api" type="button">Test API connection</button><button class="btn btn-secondary btn-small" id="copy-curl" type="button">Copy safe curl</button></div>
                             <div class="run-status" id="run-status" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="status-text">Ready. This makes one annotation request.</span></div>
                         </div>
                     </form>
@@ -190,6 +190,7 @@ return seconds</textarea></div>
         (() => {
             "use strict";
             const API_URL = "https://api.anthropic.com/v1/messages";
+            const MODELS_URL = "https://api.anthropic.com/v1/models";
             const API_VERSION = "2023-06-01";
             const PROVENANCE = "synthetic_rationale_not_teacher_cot";
             const $ = id => document.getElementById(id);
@@ -198,7 +199,8 @@ return seconds</textarea></div>
 
             const normalize = value => String(value || "").trim();
             function setStatus(message, type = "") { $("run-status").className = `run-status ${type}`.trim(); $("status-text").textContent = message; }
-            function setBusy(message) { setStatus(message, "busy"); $("generate-btn").disabled = true; }
+            function setBusy(message) { setStatus(message, "busy"); $("generate-btn").disabled = true; $("test-api").disabled = true; }
+            function resetButtons() { $("generate-btn").disabled = false; $("test-api").disabled = false; }
 
             function annotationSystem(style) {
                 const length = style === "detailed" ? "Write one to three focused paragraphs." : "Write two to four compact sentences.";
@@ -208,16 +210,30 @@ return seconds</textarea></div>
             function requestBody(model, prefix, action, style) { return { model, max_tokens: style === "detailed" ? 1200 : 600, system: annotationSystem(style), messages: [{ role: "user", content: annotationUser(prefix, action) }] }; }
             function headers(apiKey) { return { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": API_VERSION, "anthropic-dangerous-direct-browser-access": "true" }; }
 
-            async function callMessages(apiKey, body) {
+            function apiFailure(status, upstreamMessage, requestId) {
+                const detail = upstreamMessage ? ` ${upstreamMessage}` : "";
+                const suffix = requestId ? ` Request ID: ${requestId}.` : "";
+                if (status === 401) return `401 authentication failed. Use a Claude API key from Anthropic Console; AWS Bedrock Bearer keys do not work here.${detail}${suffix}`;
+                if (status === 403) return `403 access denied. The key may be valid but lacks permission for this API or model.${detail}${suffix}`;
+                if (status === 404) return `404 model or endpoint not found. Test the connection and choose a model returned for this account.${detail}${suffix}`;
+                if (status === 429) return `429 rate or credit limit reached. Check Anthropic billing and retry later.${detail}${suffix}`;
+                if (status === 400) return `400 invalid request. Check the model ID and input size.${detail}${suffix}`;
+                return `Anthropic API returned HTTP ${status}.${detail}${suffix}`;
+            }
+            async function fetchAnthropic(url, apiKey, options = {}) {
                 let response;
-                try { response = await fetch(API_URL, { method: "POST", headers: headers(apiKey), body: JSON.stringify(body) }); }
-                catch (error) { throw new Error("Browser request failed. Direct browser access or CORS may be disabled for this Anthropic organization. Use the safe curl template or a server-side proxy you control."); }
+                try { response = await fetch(url, { ...options, headers: headers(apiKey) }); }
+                catch (error) { throw new Error("The browser could not reach Anthropic. Check network filtering, then try the safe curl command. The site has no separate backend to restart."); }
                 let data;
                 try { data = await response.json(); }
                 catch (error) { throw new Error(`The API returned HTTP ${response.status} without JSON.`); }
-                if (!response.ok) throw new Error(data && data.error && data.error.message ? data.error.message : `Anthropic API error (${response.status}).`);
+                if (!response.ok) {
+                    const message = data && data.error && data.error.message ? data.error.message : "";
+                    throw new Error(apiFailure(response.status, message, response.headers.get("request-id")));
+                }
                 return data;
             }
+            function callMessages(apiKey, body) { return fetchAnthropic(API_URL, apiKey, { method: "POST", body: JSON.stringify(body) }); }
             function visibleText(content) { return (content || []).filter(block => block && block.type === "text").map(block => block.text || "").join("\n").trim(); }
             function buildRecord(prefix, action, rationale, model) {
                 const assistantText = `<think>\n${rationale}\n</think>\n${action}`;
@@ -241,7 +257,22 @@ return seconds</textarea></div>
                     currentRecord = buildRecord(prefix, action, rationale, model); currentAssistantText = currentRecord.assistant_training_text;
                     showResult(rationale, currentRecord, body); setStatus("Rationale completed and labeled as synthetic—not teacher CoT.", "success");
                 } catch (error) { setStatus(error instanceof Error ? error.message : "Completion failed.", "error"); }
-                finally { $("generate-btn").disabled = false; }
+                finally { resetButtons(); }
+            });
+
+            $("test-api").addEventListener("click", async () => {
+                const apiKey = normalize($("api-key").value), model = normalize($("model").value);
+                if (!apiKey) { setStatus("Enter an Anthropic API key first.", "error"); return; }
+                setBusy("Connecting directly to Anthropic and reading the models available to this key…");
+                try {
+                    const data = await fetchAnthropic(MODELS_URL, apiKey, { method: "GET" });
+                    const ids = (data.data || []).map(item => item && item.id).filter(Boolean);
+                    const available = ids.includes(model);
+                    if (available) setStatus(`Connection works. ${model} is available to this key.`, "success");
+                    else if (ids.length) setStatus(`Connection works, but ${model} was not returned. Try: ${ids.slice(0, 4).join(", ")}.`, "error");
+                    else setStatus("Connection works, but the models response was empty for this key.", "error");
+                } catch (error) { setStatus(error instanceof Error ? error.message : "Connection test failed.", "error"); }
+                finally { resetButtons(); }
             });
 
             $("toggle-key").addEventListener("click", () => { const key = $("api-key"), show = key.type === "password"; key.type = show ? "text" : "password"; $("toggle-key").textContent = show ? "Hide" : "Show"; });
