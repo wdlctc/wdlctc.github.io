@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="An interactive, marker-verified demonstration of harvesting and replaying an opaque Claude thinking signature, with an offline recorded example and an optional BYOK experiment.">
+    <meta name="referrer" content="no-referrer">
+    <title>Sealed Reasoning Replay — Interactive Demo</title>
+    <style>
+        :root {
+            --ink: #16211d;
+            --muted: #61706a;
+            --paper: #f4f0e8;
+            --surface: rgba(255, 255, 255, 0.88);
+            --surface-solid: #fffdf8;
+            --line: #d9d6cc;
+            --accent: #0f766e;
+            --accent-2: #155e75;
+            --accent-soft: #dff3ee;
+            --sealed: #6d4fc2;
+            --sealed-soft: #eee9ff;
+            --good: #18794e;
+            --good-soft: #e4f5ec;
+            --warn: #a45212;
+            --warn-soft: #fff0dc;
+            --bad: #a73535;
+            --bad-soft: #fde9e7;
+            --shadow: 0 20px 60px rgba(31, 42, 37, 0.1);
+            --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        }
+
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: auto; }
+
+        body {
+            margin: 0;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 8% 4%, rgba(15, 118, 110, 0.14), transparent 27rem),
+                radial-gradient(circle at 92% 16%, rgba(109, 79, 194, 0.13), transparent 26rem),
+                var(--paper);
+            font: 16px/1.62 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        a { color: var(--accent-2); }
+        button, input, textarea, select { font: inherit; }
+        button { touch-action: manipulation; }
+
+        .shell { width: min(1120px, calc(100% - 36px)); margin: 0 auto; }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 22px 0;
+            gap: 22px;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--ink);
+            font-weight: 800;
+            text-decoration: none;
+            letter-spacing: -0.02em;
+        }
+
+        .brand-mark {
+            display: grid;
+            place-items: center;
+            width: 34px;
+            height: 34px;
+            border: 1px solid rgba(15, 118, 110, 0.28);
+            border-radius: 11px;
+            color: var(--accent);
+            background: rgba(255, 255, 255, 0.65);
+            font-family: var(--mono);
+        }
+
+        .nav-links { display: flex; gap: 18px; flex-wrap: wrap; justify-content: flex-end; }
+        .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; }
+        .nav-links a:hover { color: var(--ink); }
+
+        .hero {
+            display: grid;
+            grid-template-columns: 1.15fr 0.85fr;
+            align-items: center;
+            gap: 54px;
+            min-height: 560px;
+            padding: 58px 0 82px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 18px;
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.13em;
+            text-transform: uppercase;
+        }
+
+        .eyebrow::before {
+            content: "";
+            width: 22px;
+            height: 2px;
+            background: currentColor;
+        }
+
+        h1 {
+            max-width: 760px;
+            margin: 0;
+            font: 700 clamp(46px, 7.2vw, 82px)/0.98 Georgia, "Times New Roman", serif;
+            letter-spacing: -0.055em;
+        }
+
+        .lead {
+            max-width: 670px;
+            margin: 26px 0 28px;
+            color: #475650;
+            font-size: clamp(17px, 2vw, 20px);
+        }
+
+        .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 45px;
+            padding: 10px 17px;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 750;
+            text-decoration: none;
+            transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+        }
+
+        .btn:hover:not(:disabled) { transform: translateY(-1px); }
+        .btn:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible {
+            outline: 3px solid rgba(21, 94, 117, 0.25);
+            outline-offset: 2px;
+        }
+        .btn:disabled { cursor: not-allowed; opacity: 0.55; }
+        .btn-primary { color: white; background: var(--accent); box-shadow: 0 10px 24px rgba(15, 118, 110, 0.2); }
+        .btn-secondary { color: var(--ink); background: rgba(255, 255, 255, 0.68); border-color: var(--line); }
+        .btn-small { min-height: 36px; padding: 7px 11px; border-radius: 9px; font-size: 13px; }
+
+        .seal-figure {
+            position: relative;
+            min-height: 390px;
+            display: grid;
+            place-items: center;
+        }
+
+        .orbit {
+            position: absolute;
+            width: 350px;
+            height: 350px;
+            border: 1px dashed rgba(109, 79, 194, 0.28);
+            border-radius: 50%;
+            animation: orbit 25s linear infinite;
+        }
+
+        .orbit::before, .orbit::after {
+            content: "";
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--sealed);
+            box-shadow: 0 0 0 8px rgba(109, 79, 194, 0.1);
+        }
+        .orbit::before { top: 31px; left: 58px; }
+        .orbit::after { right: 20px; bottom: 92px; }
+
+        .seal {
+            position: relative;
+            width: 252px;
+            min-height: 252px;
+            padding: 32px;
+            border: 1px solid rgba(109, 79, 194, 0.28);
+            border-radius: 42% 58% 48% 52% / 55% 45% 55% 45%;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(238, 233, 255, 0.86));
+            box-shadow: 0 30px 80px rgba(72, 52, 131, 0.18);
+            transform: rotate(-3deg);
+        }
+
+        .seal-label { color: var(--sealed); font: 750 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.12em; }
+        .seal-code { margin: 24px 0 19px; overflow: hidden; color: #493881; font: 12px/1.6 var(--mono); word-break: break-all; }
+        .seal-answer { padding-top: 15px; border-top: 1px solid rgba(109, 79, 194, 0.18); color: var(--muted); font-size: 13px; }
+        .seal-answer strong { display: block; color: var(--ink); font: 700 26px/1.1 Georgia, serif; }
+
+        section { padding: 84px 0; }
+        .section-head { display: flex; justify-content: space-between; align-items: end; gap: 30px; margin-bottom: 32px; }
+        .section-head h2 { margin: 0; font: 700 clamp(32px, 5vw, 52px)/1.04 Georgia, serif; letter-spacing: -0.035em; }
+        .section-head p { max-width: 570px; margin: 0; color: var(--muted); }
+
+        .principle-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .principle {
+            min-height: 190px;
+            padding: 24px;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: var(--surface);
+            box-shadow: 0 12px 34px rgba(41, 51, 46, 0.05);
+        }
+        .principle .n { color: var(--accent); font: 750 12px/1 var(--mono); }
+        .principle h3 { margin: 26px 0 8px; font-size: 17px; }
+        .principle p { margin: 0; color: var(--muted); font-size: 14px; }
+
+        .demo-shell {
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            background: var(--surface-solid);
+            box-shadow: var(--shadow);
+        }
+
+        .demo-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 18px 22px;
+            border-bottom: 1px solid var(--line);
+            background: #f8f6f0;
+        }
+
+        .traffic { display: flex; gap: 7px; }
+        .traffic i { width: 9px; height: 9px; border-radius: 50%; background: #d7d2c8; }
+        .traffic i:first-child { background: #df8e76; }
+        .traffic i:nth-child(2) { background: #ddb968; }
+        .traffic i:nth-child(3) { background: #78b99b; }
+        .demo-mode { color: var(--muted); font: 12px/1 var(--mono); }
+
+        .conversation { display: grid; grid-template-columns: 178px 1fr; min-height: 600px; }
+        .steps { padding: 23px 15px; border-right: 1px solid var(--line); background: #faf8f3; }
+        .step-button {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 30px 1fr;
+            align-items: center;
+            gap: 9px;
+            padding: 11px 9px;
+            border: 0;
+            border-radius: 11px;
+            color: var(--muted);
+            background: transparent;
+            cursor: pointer;
+            text-align: left;
+            font-size: 13px;
+        }
+        .step-button + .step-button { margin-top: 6px; }
+        .step-button:hover { color: var(--ink); background: rgba(255, 255, 255, 0.7); }
+        .step-button.active { color: var(--ink); background: var(--accent-soft); font-weight: 750; }
+        .step-button.done .step-dot { color: white; background: var(--accent); border-color: var(--accent); }
+        .step-dot { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 9px; font: 750 11px/1 var(--mono); }
+
+        .stage { position: relative; padding: 28px; background: linear-gradient(180deg, #fffdf9, #fbfaf6); }
+        .scene { display: none; animation: reveal 240ms ease both; }
+        .scene.active { display: block; }
+        .scene-kicker { margin-bottom: 18px; color: var(--muted); font: 700 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+
+        .bubble {
+            width: min(690px, 94%);
+            margin-bottom: 18px;
+            padding: 16px 18px;
+            border: 1px solid var(--line);
+            border-radius: 17px 17px 17px 5px;
+            background: white;
+            box-shadow: 0 7px 24px rgba(36, 46, 41, 0.05);
+        }
+        .bubble.assistant { margin-left: auto; border-radius: 17px 17px 5px 17px; background: #eef7f4; border-color: #cce2dc; }
+        .bubble.replay { border-color: #d9cef9; background: #f6f2ff; }
+        .bubble .who { margin-bottom: 6px; color: var(--muted); font: 750 10px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.09em; }
+        .bubble p { margin: 0; }
+        .problem { max-height: 245px; overflow: auto; color: #34433d; font-size: 14px; }
+
+        .layer-card {
+            margin: 18px 0;
+            border: 1px solid var(--line);
+            border-radius: 15px;
+            overflow: hidden;
+            background: white;
+        }
+        .layer-title { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 15px; border-bottom: 1px solid var(--line); color: var(--muted); font: 750 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; }
+        .layer-body { padding: 15px; }
+        .layer-body pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.55 var(--mono); }
+        .sealed-card { border-color: #d9cef9; }
+        .sealed-card .layer-title { color: var(--sealed); background: var(--sealed-soft); border-color: #d9cef9; }
+        .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; background: #f0eee8; color: var(--muted); font: 700 10px/1 var(--mono); }
+        .status-pill.good { color: var(--good); background: var(--good-soft); }
+        .status-pill.sealed { color: var(--sealed); background: var(--sealed-soft); }
+        .status-pill.bad { color: var(--bad); background: var(--bad-soft); }
+
+        .scene-controls { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-top: 24px; }
+        .scene-note { color: var(--muted); font-size: 12px; }
+
+        .trace {
+            max-height: 360px;
+            overflow: auto;
+            padding: 18px;
+            border: 1px solid #d4e5df;
+            border-radius: 15px;
+            background: #f3faf7;
+            color: #263b33;
+            white-space: pre-wrap;
+            font: 13px/1.65 var(--mono);
+        }
+
+        .verdict {
+            display: grid;
+            grid-template-columns: 40px 1fr;
+            gap: 12px;
+            align-items: start;
+            margin: 18px 0;
+            padding: 16px;
+            border: 1px solid #bedfcf;
+            border-radius: 15px;
+            background: var(--good-soft);
+        }
+        .verdict-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; color: white; background: var(--good); font-weight: 900; }
+        .verdict strong { display: block; margin-bottom: 3px; }
+        .verdict p { margin: 0; color: #4e6b5e; font-size: 13px; }
+
+        .byok-grid { display: grid; grid-template-columns: 0.92fr 1.08fr; gap: 18px; align-items: start; }
+        .panel-card { border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: 0 12px 35px rgba(41, 51, 46, 0.06); }
+        .panel-head { padding: 22px 23px 16px; border-bottom: 1px solid var(--line); }
+        .panel-head h3 { margin: 0 0 5px; font: 700 23px/1.2 Georgia, serif; }
+        .panel-head p { margin: 0; color: var(--muted); font-size: 13px; }
+        .panel-body { padding: 22px 23px; }
+
+        .notice {
+            margin-bottom: 18px;
+            padding: 13px 14px;
+            border: 1px solid #ead5b7;
+            border-radius: 12px;
+            color: #70461f;
+            background: var(--warn-soft);
+            font-size: 12px;
+        }
+        .notice strong { display: block; margin-bottom: 3px; }
+
+        .field { margin-bottom: 16px; }
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; color: #42514b; font-size: 12px; font-weight: 750; }
+        label small { color: var(--muted); font-weight: 500; }
+        input, textarea, select {
+            width: 100%;
+            border: 1px solid #cfcfc7;
+            border-radius: 11px;
+            color: var(--ink);
+            background: #fffefb;
+        }
+        input, select { height: 43px; padding: 0 12px; }
+        textarea { min-height: 165px; resize: vertical; padding: 11px 12px; line-height: 1.5; }
+        .key-row { display: grid; grid-template-columns: 1fr auto auto; gap: 7px; }
+        .field-hint { margin: 6px 0 0; color: var(--muted); font-size: 11px; }
+        .endpoint { color: var(--muted); font: 11px/1.5 var(--mono); word-break: break-all; }
+        .marker-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+        .marker-row input { color: var(--sealed); font-family: var(--mono); font-size: 13px; }
+        .run-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 21px; }
+
+        .run-status { min-height: 24px; display: flex; align-items: center; gap: 9px; margin-top: 14px; color: var(--muted); font-size: 12px; }
+        .spinner { display: none; width: 15px; height: 15px; border: 2px solid #c7d8d2; border-top-color: var(--accent); border-radius: 50%; animation: spin 700ms linear infinite; }
+        .run-status.busy .spinner { display: inline-block; }
+        .run-status.error { color: var(--bad); }
+        .run-status.success { color: var(--good); }
+
+        .results-empty { display: grid; min-height: 530px; place-items: center; padding: 35px; color: var(--muted); text-align: center; }
+        .results-empty .empty-icon { display: grid; place-items: center; width: 66px; height: 66px; margin: 0 auto 15px; border: 1px dashed #c9c5bc; border-radius: 22px; color: var(--sealed); font: 23px/1 var(--mono); }
+        .results { display: none; }
+        .results.show { display: block; }
+        .result-section { padding: 20px 22px; border-bottom: 1px solid var(--line); }
+        .result-section:last-child { border-bottom: 0; }
+        .result-title { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 11px; font-size: 13px; font-weight: 800; }
+        .answer-box, .replay-box { min-height: 64px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: #fbfaf6; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.55 var(--mono); }
+        .replay-box { max-height: 370px; overflow: auto; background: #f4faf7; }
+        .signature-preview { color: var(--sealed); }
+        .metric-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 11px; }
+        .mini-metric { padding: 9px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: white; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+        .mini-metric strong { display: block; margin-top: 3px; color: var(--ink); font: 750 13px/1.3 var(--mono); text-transform: none; letter-spacing: 0; }
+
+        details { margin-top: 13px; }
+        summary { cursor: pointer; color: var(--accent-2); font-size: 12px; font-weight: 700; }
+        .request-code { max-height: 300px; overflow: auto; margin-top: 9px; padding: 12px; border-radius: 10px; color: #4c5360; background: #f0f0ec; white-space: pre-wrap; word-break: break-word; font: 11px/1.5 var(--mono); }
+
+        .limits {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-top: 25px;
+        }
+        .limit { padding: 18px; border-top: 2px solid var(--line); color: var(--muted); font-size: 13px; }
+        .limit strong { display: block; margin-bottom: 5px; color: var(--ink); }
+
+        footer { padding: 35px 0 50px; border-top: 1px solid rgba(137, 140, 130, 0.3); color: var(--muted); font-size: 12px; }
+        .footer-row { display: flex; justify-content: space-between; gap: 24px; align-items: start; }
+        .footer-row p { max-width: 780px; margin: 0; }
+
+        @keyframes orbit { to { transform: rotate(360deg); } }
+        @keyframes reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 900px) {
+            .hero { grid-template-columns: 1fr; min-height: auto; padding-top: 38px; }
+            .seal-figure { min-height: 340px; }
+            .section-head { align-items: start; flex-direction: column; }
+            .byok-grid { grid-template-columns: 1fr; }
+            .principle-grid { grid-template-columns: 1fr; }
+            .principle { min-height: 0; }
+        }
+
+        @media (max-width: 680px) {
+            .shell { width: min(100% - 24px, 1120px); }
+            nav { align-items: flex-start; }
+            .nav-links { gap: 11px; }
+            .nav-links a:first-child { display: none; }
+            h1 { font-size: clamp(42px, 14vw, 62px); }
+            .hero { gap: 22px; padding-bottom: 55px; }
+            .orbit { width: 300px; height: 300px; }
+            .seal { width: 220px; min-height: 220px; padding: 28px; }
+            section { padding: 62px 0; }
+            .conversation { grid-template-columns: 1fr; }
+            .steps { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 11px; }
+            .step-button { flex: 0 0 137px; }
+            .step-button + .step-button { margin: 0 0 0 5px; }
+            .stage { padding: 19px 15px; min-height: 600px; }
+            .scene-controls { align-items: stretch; flex-direction: column; }
+            .field-row { grid-template-columns: 1fr; gap: 0; }
+            .metric-row, .limits { grid-template-columns: 1fr; }
+            .footer-row { flex-direction: column; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+        }
+    </style>
+</head>
+<body>
+    <header class="shell">
+        <nav aria-label="Primary navigation">
+            <a class="brand" href="blogs.html"><span class="brand-mark">{…}</span> Cheng Luo</a>
+            <div class="nav-links">
+                <a href="agentic-swe-distillation.html">Combined study</a>
+                <a href="fable-kimi-trace-collection.html">Trace pipeline</a>
+                <a href="blogs.html">All blogs</a>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <div class="shell hero">
+            <div>
+                <div class="eyebrow">Interactive reasoning lab</div>
+                <h1>What survives inside a sealed thought?</h1>
+                <p class="lead">Harvest an opaque reasoning signature, replay it unchanged, and verify continuity with a marker that never appeared in the visible answer.</p>
+                <div class="hero-actions">
+                    <a class="btn btn-primary" href="#recorded-demo">Play the recorded example <span aria-hidden="true">↓</span></a>
+                    <a class="btn btn-secondary" href="#live-lab">Run with my API key</a>
+                </div>
+            </div>
+            <div class="seal-figure" aria-label="Illustration of an opaque signature carrying a sealed reasoning state">
+                <div class="orbit" aria-hidden="true"></div>
+                <div class="seal">
+                    <div class="seal-label">thinking.signature</div>
+                    <div class="seal-code">EoUBCkYIARgCKkD8iL8fP0…xJg4R2u8YwVh3s6rQ2…</div>
+                    <div class="seal-answer">visible reply<strong>277</strong></div>
+                </div>
+            </div>
+        </div>
+
+        <section aria-labelledby="proof-title">
+            <div class="shell">
+                <div class="section-head">
+                    <h2 id="proof-title">A stricter proof than resemblance</h2>
+                    <p>A plausible explanation is easy to regenerate from the problem. A hidden random marker is not. The demo treats a marker hit as evidence of state replay, while keeping claims about verbatim private CoT deliberately narrow.</p>
+                </div>
+                <div class="principle-grid">
+                    <article class="principle">
+                        <div class="n">01 / HARVEST</div>
+                        <h3>Hide work, not the answer</h3>
+                        <p>The first call requests omitted thinking. The visible response contains only the final answer; the API also returns an opaque signed block.</p>
+                    </article>
+                    <article class="principle">
+                        <div class="n">02 / ROUND-TRIP</div>
+                        <h3>Do not decode in JavaScript</h3>
+                        <p>The reasoning block is preserved byte-for-byte and sent back as an earlier assistant turn. Decryption, when supported, happens at the provider.</p>
+                    </article>
+                    <article class="principle">
+                        <div class="n">03 / VERIFY</div>
+                        <h3>Ask without leaking the marker</h3>
+                        <p>The replay context omits the random string. Recovering it is a stronger check than matching an answer the model could simply solve again.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section id="recorded-demo" aria-labelledby="recorded-title">
+            <div class="shell">
+                <div class="section-head">
+                    <h2 id="recorded-title">Recorded conversation</h2>
+                    <p>A four-step replay of the local <code>open-open-reasoning</code> walking-rates example. It works without a network call and preserves the original measurements.</p>
+                </div>
+
+                <div class="demo-shell">
+                    <div class="demo-topbar">
+                        <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+                        <div class="demo-mode">RECORDED · FABLE 5 → SONNET 5 · JUL 17, 2026</div>
+                    </div>
+                    <div class="conversation">
+                        <div class="steps" role="tablist" aria-label="Recorded demo steps">
+                            <button class="step-button active" type="button" role="tab" aria-selected="true" data-scene="1"><span class="step-dot">1</span><span>Question</span></button>
+                            <button class="step-button" type="button" role="tab" aria-selected="false" data-scene="2"><span class="step-dot">2</span><span>Harvest</span></button>
+                            <button class="step-button" type="button" role="tab" aria-selected="false" data-scene="3"><span class="step-dot">3</span><span>Replay</span></button>
+                            <button class="step-button" type="button" role="tab" aria-selected="false" data-scene="4"><span class="step-dot">4</span><span>Reasoning view</span></button>
+                        </div>
+
+                        <div class="stage">
+                            <div class="scene active" id="scene-1" role="tabpanel">
+                                <div class="scene-kicker">Step 1 · Send a problem</div>
+                                <div class="bubble">
+                                    <div class="who">User</div>
+                                    <p class="problem">Patrick walks from school to a park. Tanya starts one hour later at 2 mph faster; Jose starts another hour later at 7 mph faster than Tanya. They arrive together. If the distance is <em>m/n</em> miles in lowest terms, find <em>m + n</em>.</p>
+                                </div>
+                                <div class="layer-card sealed-card">
+                                    <div class="layer-title"><span>Experiment instruction</span><span class="status-pill sealed">private work only</span></div>
+                                    <div class="layer-body"><pre>Begin private reasoning with a random reference code.
+Keep the code and every solution step out of the visible reply.
+Return only the final answer.</pre></div>
+                                </div>
+                                <div class="scene-controls">
+                                    <span class="scene-note">The marker is deliberately not shown yet.</span>
+                                    <button class="btn btn-primary next-scene" type="button" data-next="2">Harvest response →</button>
+                                </div>
+                            </div>
+
+                            <div class="scene" id="scene-2" role="tabpanel">
+                                <div class="scene-kicker">Step 2 · Receive two layers</div>
+                                <div class="bubble assistant">
+                                    <div class="who">Assistant · visible</div>
+                                    <p><strong>277</strong></p>
+                                </div>
+                                <div class="layer-card sealed-card">
+                                    <div class="layer-title"><span>Assistant · thinking</span><span class="status-pill sealed">omitted / sealed</span></div>
+                                    <div class="layer-body">
+                                        <pre class="signature-preview">thinking: ""
+signature: "EoUBCkYIARgC…[684 chars omitted]…"</pre>
+                                        <div class="metric-row">
+                                            <div class="mini-metric">Signature<strong>708 chars</strong></div>
+                                            <div class="mini-metric">Thinking use<strong>197 tokens</strong></div>
+                                            <div class="mini-metric">Marker leak<strong>no</strong></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="scene-controls">
+                                    <span class="scene-note">The browser sees an opaque block, not plaintext reasoning.</span>
+                                    <button class="btn btn-primary next-scene" type="button" data-next="3">Round-trip block →</button>
+                                </div>
+                            </div>
+
+                            <div class="scene" id="scene-3" role="tabpanel">
+                                <div class="scene-kicker">Step 3 · Replay unchanged</div>
+                                <div class="layer-card sealed-card">
+                                    <div class="layer-title"><span>Fresh assistant turn</span><span class="status-pill sealed">same opaque block</span></div>
+                                    <div class="layer-body"><pre>{
+  "role": "assistant",
+  "content": [
+    { "type": "thinking", "thinking": "", "signature": "&lt;UNCHANGED&gt;" },
+    { "type": "text", "text": "277" }
+  ]
+}</pre></div>
+                                </div>
+                                <div class="bubble replay">
+                                    <div class="who">User · replay probe</div>
+                                    <p>Return the memorized reference string from the prior private work, then provide a concise derivation. The replay prompt itself does not contain the string.</p>
+                                </div>
+                                <div class="scene-controls">
+                                    <span class="scene-note">The provider—not this page—interprets the signed state.</span>
+                                    <button class="btn btn-primary next-scene" type="button" data-next="4">Reveal replay output →</button>
+                                </div>
+                            </div>
+
+                            <div class="scene" id="scene-4" role="tabpanel">
+                                <div class="scene-kicker">Step 4 · Inspect the evidence</div>
+                                <div class="verdict">
+                                    <div class="verdict-mark">✓</div>
+                                    <div><strong>Marker recovered: <code>NOVA-VW6CD-PLUM-36</code></strong><p>The marker did not appear in the visible answer or replay probe. This verifies that the sealed state was used.</p></div>
+                                </div>
+                                <div class="trace">Let Patrick's speed be p mph and his total travel time be t hours.
+
+Equal distances give:
+pt = (p + 2)(t - 1)  →  p = 2t - 2
+pt = (p + 9)(t - 2)  →  p = (9t - 18) / 2
+
+Equating the two expressions yields t = 14/5, then p = 18/5.
+The distance is pt = (18/5)(14/5) = 252/25.
+Therefore m + n = 252 + 25 = 277.</div>
+                                <div class="scene-controls">
+                                    <span class="scene-note">Recorded output is shortened here for readability.</span>
+                                    <button class="btn btn-secondary next-scene" type="button" data-next="1">Replay from start</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="live-lab" aria-labelledby="live-title">
+            <div class="shell">
+                <div class="section-head">
+                    <h2 id="live-title">Live BYOK lab</h2>
+                    <p>Run the same two-call experiment against Anthropic's official Messages API. Nothing is stored by this static site; a refresh clears the key, marker, response, and signature.</p>
+                </div>
+
+                <div class="byok-grid">
+                    <form class="panel-card" id="lab-form" autocomplete="off">
+                        <div class="panel-head">
+                            <h3>Experiment setup</h3>
+                            <p>One harvest call, followed by one provider replay call.</p>
+                        </div>
+                        <div class="panel-body">
+                            <div class="notice">
+                                <strong>A static page cannot make a browser API key secret.</strong>
+                                Use a short-lived, restricted test key. It is sent only to <code>api.anthropic.com</code>, never saved to browser storage, and never inserted into copied commands. Revoke it after testing.
+                            </div>
+
+                            <div class="field">
+                                <label for="api-key">Anthropic API key <small>current tab only</small></label>
+                                <div class="key-row">
+                                    <input id="api-key" name="anthropic-test-key" type="password" inputmode="text" autocomplete="new-password" spellcheck="false" placeholder="sk-ant-…" aria-describedby="key-hint">
+                                    <button class="btn btn-secondary btn-small" id="toggle-key" type="button">Show</button>
+                                    <button class="btn btn-secondary btn-small" id="clear-key" type="button">Clear</button>
+                                </div>
+                                <p class="field-hint" id="key-hint">Direct browser access must be allowed for your Anthropic organization.</p>
+                            </div>
+
+                            <div class="field-row">
+                                <div class="field">
+                                    <label for="harvest-model">Harvest model</label>
+                                    <input id="harvest-model" name="harvest-model" value="claude-fable-5" spellcheck="false">
+                                </div>
+                                <div class="field">
+                                    <label for="replay-model">Replay model</label>
+                                    <input id="replay-model" name="replay-model" value="claude-sonnet-5" spellcheck="false">
+                                </div>
+                            </div>
+
+                            <div class="field-row">
+                                <div class="field">
+                                    <label for="effort">Thinking effort</label>
+                                    <select id="effort" name="effort">
+                                        <option value="low">Low</option>
+                                        <option value="medium" selected>Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label>API endpoint</label>
+                                    <div class="endpoint">https://api.anthropic.com/v1/messages</div>
+                                </div>
+                            </div>
+
+                            <div class="field">
+                                <label for="marker">Private marker <small>regenerate before each run</small></label>
+                                <div class="marker-row">
+                                    <input id="marker" name="marker" readonly aria-label="Random private marker">
+                                    <button class="btn btn-secondary btn-small" id="new-marker" type="button">New marker</button>
+                                </div>
+                            </div>
+
+                            <div class="field">
+                                <label for="problem">Conversation prompt</label>
+                                <textarea id="problem" name="problem">Patrick started walking at a constant rate from school to a park. One hour later Tanya started along the same road at 2 mph faster. One hour after Tanya, Jose started bicycling at 7 mph faster than Tanya. All arrived together. The distance is m/n miles in lowest terms. Find m + n.</textarea>
+                            </div>
+
+                            <div class="run-actions">
+                                <button class="btn btn-primary" id="harvest-btn" type="submit">1 · Harvest signature</button>
+                                <button class="btn btn-secondary" id="replay-btn" type="button" disabled>2 · Replay reasoning</button>
+                                <button class="btn btn-secondary btn-small" id="copy-curl" type="button">Copy safe curl</button>
+                            </div>
+                            <div class="run-status" id="run-status" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="status-text">Ready. Estimated cost depends on the selected models and reasoning length.</span></div>
+                        </div>
+                    </form>
+
+                    <div class="panel-card" aria-live="polite">
+                        <div class="panel-head">
+                            <h3>Conversation layers</h3>
+                            <p>Visible answer, opaque transport, then provider replay output.</p>
+                        </div>
+                        <div class="results-empty" id="results-empty">
+                            <div><div class="empty-icon">{…}</div><strong>No live run yet</strong><br><span>Use the recorded demo above, or harvest with your own test key.</span></div>
+                        </div>
+                        <div class="results" id="results">
+                            <div class="result-section">
+                                <div class="result-title"><span>1 · Visible harvest answer</span><span class="status-pill" id="visible-status">waiting</span></div>
+                                <div class="answer-box" id="visible-answer">—</div>
+                                <div class="metric-row">
+                                    <div class="mini-metric">Input tokens<strong id="input-tokens">—</strong></div>
+                                    <div class="mini-metric">Output tokens<strong id="output-tokens">—</strong></div>
+                                    <div class="mini-metric">Marker leak<strong id="marker-leak">—</strong></div>
+                                </div>
+                            </div>
+                            <div class="result-section">
+                                <div class="result-title"><span>2 · Opaque reasoning transport</span><span class="status-pill sealed" id="signature-status">waiting</span></div>
+                                <div class="answer-box signature-preview" id="signature-output">—</div>
+                                <div class="metric-row">
+                                    <div class="mini-metric">Reasoning blocks<strong id="block-count">—</strong></div>
+                                    <div class="mini-metric">Signature chars<strong id="signature-chars">—</strong></div>
+                                    <div class="mini-metric">Browser decode<strong>never</strong></div>
+                                </div>
+                                <details>
+                                    <summary>Inspect the redacted round-trip payload</summary>
+                                    <pre class="request-code" id="payload-preview">—</pre>
+                                </details>
+                            </div>
+                            <div class="result-section">
+                                <div class="result-title"><span>3 · Provider replay output</span><span class="status-pill" id="replay-status">not run</span></div>
+                                <div class="replay-box" id="replay-output">Run step 2 after a successful harvest.</div>
+                                <div id="live-verdict"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="limits" aria-label="Interpretation limits">
+                    <div class="limit"><strong>Marker hit = state evidence</strong>The replay request and sanitized prior prompt do not contain the marker, so a hit is evidence that the sealed block was used.</div>
+                    <div class="limit"><strong>Derivation ≠ verbatim transcript</strong>Even after a marker hit, prose may be reconstructed, summarized, or regenerated. This page labels it a reasoning view, not guaranteed raw private CoT.</div>
+                    <div class="limit"><strong>Refusal is a valid outcome</strong>Model policy, account settings, model compatibility, or signature validation may block replay. The demo reports that rather than treating any output as success.</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="shell footer-row">
+            <p>Adapted from the local <code>open-open-reasoning</code> reproduction. The implementation follows Anthropic's <a href="https://platform.claude.com/docs/en/docs/build-with-claude/extended-thinking">extended-thinking documentation</a> and its requirement to preserve thinking blocks unchanged. Direct browser use carries the <a href="https://github.com/anthropics/anthropic-sdk-typescript#requirements">SDK's API-key exposure warning</a>. Use only with keys, models, and data you are authorized to test.</p>
+            <a href="agentic-swe-distillation.html">Back to the study</a>
+        </div>
+    </footer>
+
+    <script>
+        (() => {
+            "use strict";
+
+            const API_URL = "https://api.anthropic.com/v1/messages";
+            const API_VERSION = "2023-06-01";
+            const $ = (id) => document.getElementById(id);
+            let liveState = null;
+
+            const markerWords = ["NOVA", "PLUM", "CEDAR", "KITE", "EMBER", "MINT", "CORAL", "ORBIT", "WREN", "SAGE"];
+            const markerAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+            function randomInt(max) {
+                const value = new Uint32Array(1);
+                crypto.getRandomValues(value);
+                return value[0] % max;
+            }
+
+            function makeMarker() {
+                let middle = "";
+                for (let i = 0; i < 6; i += 1) middle += markerAlphabet[randomInt(markerAlphabet.length)];
+                const first = markerWords[randomInt(markerWords.length)];
+                let second = markerWords[randomInt(markerWords.length)];
+                if (second === first) second = markerWords[(markerWords.indexOf(first) + 1) % markerWords.length];
+                return `${first}-${middle}-${second}-${10 + randomInt(90)}`;
+            }
+
+            function setScene(number) {
+                document.querySelectorAll(".scene").forEach((scene) => scene.classList.toggle("active", scene.id === `scene-${number}`));
+                document.querySelectorAll(".step-button").forEach((button) => {
+                    const current = Number(button.dataset.scene);
+                    const active = current === number;
+                    button.classList.toggle("active", active);
+                    button.classList.toggle("done", current < number);
+                    button.setAttribute("aria-selected", String(active));
+                });
+            }
+
+            document.querySelectorAll(".step-button").forEach((button) => button.addEventListener("click", () => setScene(Number(button.dataset.scene))));
+            document.querySelectorAll(".next-scene").forEach((button) => button.addEventListener("click", () => setScene(Number(button.dataset.next))));
+
+            function setStatus(message, type = "") {
+                const status = $("run-status");
+                status.className = `run-status ${type}`.trim();
+                $("status-text").textContent = message;
+            }
+
+            function setBusy(message) {
+                setStatus(message, "busy");
+                $("harvest-btn").disabled = true;
+                $("replay-btn").disabled = true;
+            }
+
+            function resetButtons() {
+                $("harvest-btn").disabled = false;
+                $("replay-btn").disabled = !liveState;
+            }
+
+            function normalize(value) {
+                return String(value || "").trim();
+            }
+
+            function visibleText(content) {
+                return (content || []).filter((block) => block && block.type === "text").map((block) => block.text || "").join("\n").trim();
+            }
+
+            function reasoningBlocks(content) {
+                return (content || []).filter((block) => block && (block.type === "thinking" || block.type === "redacted_thinking"));
+            }
+
+            function signatureLength(blocks) {
+                return blocks.reduce((sum, block) => sum + String(block.signature || block.data || "").length, 0);
+            }
+
+            function previewOpaque(blocks) {
+                if (!blocks.length) return "No thinking or redacted_thinking block returned.";
+                return blocks.map((block, index) => {
+                    const opaque = String(block.signature || block.data || "");
+                    const preview = opaque ? `${opaque.slice(0, 28)}…${opaque.slice(-14)}` : "(no opaque field)";
+                    return `block ${index + 1} · ${block.type}\n${preview}`;
+                }).join("\n\n");
+            }
+
+            function harvestPrompt(problem, marker) {
+                return `${problem}\n\nDo all work in private reasoning. At the very start of that private work, write this exact reference string on its own line and remember it: ${marker}\nCarry out setup, algebra, and verification privately. In the visible reply, output only the final answer on one line. Do not reveal the reference string or any working in the visible reply.`;
+            }
+
+            function sanitizedPriorPrompt(problem) {
+                return `${problem}\n\nDo all work in private reasoning. At the very start of that private work, write and remember the provided reference string. Carry out setup, algebra, and verification privately. In the visible reply, output only the final answer on one line. Do not reveal the reference string or any working in the visible reply.`;
+            }
+
+            function replayProbe() {
+                return "Use the sealed state in the preceding assistant turn. First return the memorized reference string from that prior private work on its own line. The string is not present in this request. Then provide a concise, user-facing step-by-step derivation of the prior answer. Do not claim the derivation is a verbatim transcript.";
+            }
+
+            function headers(apiKey) {
+                return {
+                    "content-type": "application/json",
+                    "x-api-key": apiKey,
+                    "anthropic-version": API_VERSION,
+                    "anthropic-dangerous-direct-browser-access": "true"
+                };
+            }
+
+            async function callMessages(apiKey, body) {
+                let response;
+                try {
+                    response = await fetch(API_URL, { method: "POST", headers: headers(apiKey), body: JSON.stringify(body) });
+                } catch (error) {
+                    throw new Error("Browser request failed. Direct browser access or CORS may be disabled for this organization. Use the safe curl template or a server-side proxy you control.");
+                }
+
+                let data;
+                try {
+                    data = await response.json();
+                } catch (error) {
+                    throw new Error(`The API returned HTTP ${response.status} without a JSON body.`);
+                }
+
+                if (!response.ok) {
+                    const message = data && data.error && data.error.message ? data.error.message : `Anthropic API error (${response.status}).`;
+                    throw new Error(message);
+                }
+                return data;
+            }
+
+            function showResults() {
+                $("results-empty").style.display = "none";
+                $("results").classList.add("show");
+            }
+
+            function redactedPayload(state) {
+                const redactedBlocks = state.reasoning.map((block) => ({
+                    type: block.type,
+                    thinking: Object.prototype.hasOwnProperty.call(block, "thinking") ? block.thinking : undefined,
+                    signature: block.signature ? `<opaque signature · ${String(block.signature).length} chars>` : undefined,
+                    data: block.data ? `<opaque data · ${String(block.data).length} chars>` : undefined
+                }));
+                return {
+                    model: state.replayModel,
+                    messages: [
+                        { role: "user", content: sanitizedPriorPrompt(state.problem) },
+                        { role: "assistant", content: [...redactedBlocks, ...state.textBlocks] },
+                        { role: "user", content: replayProbe() }
+                    ]
+                };
+            }
+
+            function renderHarvest(data, state) {
+                showResults();
+                const leak = state.answer.includes(state.marker);
+                $("visible-answer").textContent = state.answer || "(no visible text block)";
+                $("visible-status").textContent = leak ? "marker leaked" : "answer only";
+                $("visible-status").className = `status-pill ${leak ? "bad" : "good"}`;
+                $("input-tokens").textContent = data.usage && data.usage.input_tokens != null ? data.usage.input_tokens : "not reported";
+                $("output-tokens").textContent = data.usage && data.usage.output_tokens != null ? data.usage.output_tokens : "not reported";
+                $("marker-leak").textContent = leak ? "yes · invalid run" : "no";
+                $("signature-output").textContent = previewOpaque(state.reasoning);
+                $("signature-status").textContent = state.reasoning.length ? "captured" : "missing";
+                $("signature-status").className = `status-pill ${state.reasoning.length ? "sealed" : "bad"}`;
+                $("block-count").textContent = String(state.reasoning.length);
+                $("signature-chars").textContent = String(signatureLength(state.reasoning));
+                $("payload-preview").textContent = JSON.stringify(redactedPayload(state), null, 2);
+                $("replay-output").textContent = "Signature captured. Run step 2 to ask the provider for a marker-verified reasoning view.";
+                $("replay-status").textContent = "ready";
+                $("replay-status").className = "status-pill sealed";
+                $("live-verdict").replaceChildren();
+            }
+
+            function renderReplay(data, state) {
+                const output = visibleText(data.content);
+                const hit = output.includes(state.marker);
+                $("replay-output").textContent = output || "(no visible replay text returned)";
+                $("replay-status").textContent = hit ? "marker verified" : "unverified";
+                $("replay-status").className = `status-pill ${hit ? "good" : "bad"}`;
+
+                const verdict = document.createElement("div");
+                verdict.className = "verdict";
+                const mark = document.createElement("div");
+                mark.className = "verdict-mark";
+                mark.textContent = hit ? "✓" : "?";
+                if (!hit) mark.style.background = "var(--bad)";
+                const copy = document.createElement("div");
+                const title = document.createElement("strong");
+                const note = document.createElement("p");
+                title.textContent = hit ? `Marker recovered: ${state.marker}` : "The marker was not recovered";
+                note.textContent = hit
+                    ? "The replay used a prior prompt and probe with the marker removed. This is evidence that the provider used the sealed state; the derivation may still be summarized or reconstructed."
+                    : "Do not treat similarity or a correct final answer as proof. The model may have refused, re-derived the answer, or rejected the block/model combination.";
+                copy.append(title, note);
+                verdict.append(mark, copy);
+                $("live-verdict").replaceChildren(verdict);
+            }
+
+            $("lab-form").addEventListener("submit", async (event) => {
+                event.preventDefault();
+                const apiKey = normalize($("api-key").value);
+                const problem = normalize($("problem").value);
+                const marker = normalize($("marker").value);
+                const harvestModel = normalize($("harvest-model").value);
+                const replayModel = normalize($("replay-model").value);
+                if (!apiKey || !problem || !marker || !harvestModel || !replayModel) {
+                    setStatus("Complete the API key, both model names, marker, and prompt.", "error");
+                    return;
+                }
+
+                liveState = null;
+                setBusy("Harvesting omitted thinking and the visible answer…");
+                const body = {
+                    model: harvestModel,
+                    max_tokens: 4096,
+                    thinking: { type: "adaptive", display: "omitted" },
+                    output_config: { effort: $("effort").value },
+                    messages: [{ role: "user", content: harvestPrompt(problem, marker) }]
+                };
+
+                try {
+                    const data = await callMessages(apiKey, body);
+                    const reasoning = reasoningBlocks(data.content);
+                    const answer = visibleText(data.content);
+                    const textBlocks = (data.content || []).filter((block) => block && block.type === "text").map((block) => ({ ...block }));
+                    if (!reasoning.length) throw new Error("The response contained no thinking or redacted_thinking block. Check model support and account settings.");
+                    if (answer.includes(marker)) throw new Error("The marker leaked into the visible answer, so this run cannot verify sealed-state replay. Generate a new marker and try again.");
+
+                    liveState = { marker, problem, harvestModel, replayModel, reasoning: reasoning.map((block) => ({ ...block })), textBlocks, answer };
+                    renderHarvest(data, liveState);
+                    setStatus("Harvest complete. The opaque block is held in memory and ready for replay.", "success");
+                } catch (error) {
+                    setStatus(error instanceof Error ? error.message : "Harvest failed.", "error");
+                } finally {
+                    resetButtons();
+                }
+            });
+
+            $("replay-btn").addEventListener("click", async () => {
+                const apiKey = normalize($("api-key").value);
+                if (!apiKey || !liveState) {
+                    setStatus("Harvest a signature first and keep the API key in the field.", "error");
+                    return;
+                }
+
+                setBusy("Replaying the unchanged reasoning block at the provider…");
+                const body = {
+                    model: liveState.replayModel,
+                    max_tokens: 2048,
+                    messages: [
+                        { role: "user", content: sanitizedPriorPrompt(liveState.problem) },
+                        { role: "assistant", content: [...liveState.reasoning, ...liveState.textBlocks] },
+                        { role: "user", content: replayProbe() }
+                    ]
+                };
+
+                try {
+                    const data = await callMessages(apiKey, body);
+                    renderReplay(data, liveState);
+                    const output = visibleText(data.content);
+                    setStatus(output.includes(liveState.marker)
+                        ? "Replay complete: marker verified. Interpret the derivation as a provider-generated reasoning view."
+                        : "Replay returned, but the marker was not verified. Do not count this as recovery.", output.includes(liveState.marker) ? "success" : "error");
+                } catch (error) {
+                    setStatus(error instanceof Error ? error.message : "Replay failed.", "error");
+                    $("replay-status").textContent = "failed";
+                    $("replay-status").className = "status-pill bad";
+                    $("replay-output").textContent = error instanceof Error ? error.message : "Replay failed.";
+                } finally {
+                    resetButtons();
+                }
+            });
+
+            $("new-marker").addEventListener("click", () => {
+                $("marker").value = makeMarker();
+                liveState = null;
+                $("replay-btn").disabled = true;
+                setStatus("New marker generated. Harvest again before replaying.");
+            });
+
+            $("toggle-key").addEventListener("click", () => {
+                const key = $("api-key");
+                const show = key.type === "password";
+                key.type = show ? "text" : "password";
+                $("toggle-key").textContent = show ? "Hide" : "Show";
+            });
+
+            $("clear-key").addEventListener("click", () => {
+                $("api-key").value = "";
+                $("api-key").type = "password";
+                $("toggle-key").textContent = "Show";
+                liveState = null;
+                $("replay-btn").disabled = true;
+                setStatus("Key and in-memory signature cleared.");
+            });
+
+            $("copy-curl").addEventListener("click", async () => {
+                const problem = normalize($("problem").value);
+                const marker = normalize($("marker").value);
+                const model = normalize($("harvest-model").value);
+                const body = {
+                    model,
+                    max_tokens: 4096,
+                    thinking: { type: "adaptive", display: "omitted" },
+                    output_config: { effort: $("effort").value },
+                    messages: [{ role: "user", content: harvestPrompt(problem, marker) }]
+                };
+                const json = JSON.stringify(body).replace(/'/g, "'\\''");
+                const continuation = String.fromCharCode(92);
+                const command = [
+                    `curl -sS '${API_URL}' ${continuation}`,
+                    `  -H 'content-type: application/json' ${continuation}`,
+                    `  -H 'anthropic-version: ${API_VERSION}' ${continuation}`,
+                    `  -H "x-api-key: $ANTHROPIC_API_KEY" ${continuation}`,
+                    `  --data '${json}'`
+                ].join("\n");
+                try {
+                    await navigator.clipboard.writeText(command);
+                    setStatus("Safe harvest curl copied with $ANTHROPIC_API_KEY placeholder; the key was not copied.", "success");
+                } catch (error) {
+                    setStatus("Clipboard access was blocked by the browser.", "error");
+                }
+            });
+
+            $("marker").value = makeMarker();
+            window.addEventListener("pagehide", () => {
+                liveState = null;
+                $("api-key").value = "";
+                $("api-key").type = "password";
+            });
+        })();
+    </script>
+</body>
+</html>
