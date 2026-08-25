@@ -103,11 +103,19 @@
     </div>
 
     <div class="key-finding">
-        <strong>Best recorded downstream gain.</strong> In a separate, contamination-controlled
-        Kimi-K3 held-out run, Scale-SWE pass@1 rose from <strong>0.7% (1/141)</strong> for base Qwen3-8B
-        to <strong>25.4% (36/142)</strong> after distillation: roughly <strong>36&times;</strong> relative and
-        <strong>+24.7 percentage points</strong> absolute. This is the project-wide best recorded run,
-        not a claim about every dataset or benchmark. <a href="kimi-k3-distillation.html">Full evaluation</a>.
+        <strong>Best recorded downstream gain.</strong> This separate, contamination-controlled run
+        used held-out Scale-SWE tasks.
+        <table>
+            <thead>
+                <tr><th>Model</th><th>Held-out tasks</th><th>Solved</th><th>Pass@1</th><th>Gain vs. base</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Base Qwen3-8B</td><td>141</td><td>1</td><td>0.7%</td><td>&mdash;</td></tr>
+                <tr><td>Kimi-K3-distilled Qwen3-8B</td><td>142</td><td>36</td><td><strong>25.4%</strong></td><td><strong>~36&times;; +24.7 pp</strong></td></tr>
+            </tbody>
+        </table>
+        This is the project-wide best recorded run, not a claim about every dataset or benchmark.
+        <a href="kimi-k3-distillation.html">Full evaluation</a>.
     </div>
 
     <div class="toc">
