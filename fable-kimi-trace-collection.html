@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="A reproducible pipeline for collecting black-box agent traces from Bedrock, adding causal synthetic rationales with Kimi-K3, validating provenance, and exporting Qwen3 SFT data.">
+    <meta name="description" content="A reproducible pipeline for collecting black-box agent traces over a teacher API, adding causal synthetic rationales with Kimi-K3, validating provenance, and exporting Qwen3 SFT data.">
     <title>From Black-Box Agent Traces to Distillation Data</title>
     <style>
         body {
@@ -98,7 +98,7 @@
 
     <p>What do you do when a strong teacher API can solve software-engineering tasks and expose its
     tool calls, but does <em>not</em> return chain-of-thought? We built a two-model data pipeline:
-    <strong>Claude Fable on Amazon Bedrock</strong> executes the actual agent trajectory, then
+    <strong>Claude Fable, accessed through API calls,</strong> executes the actual agent trajectory, then
     <strong>Kimi-K3</strong> writes a short, causal explanation for each already-recorded assistant
     action. The result is a provenance-rich SFT dataset.</p>
 
@@ -162,7 +162,7 @@
         | OpenAI-compatible messages and tools
         v
 local bridge (:8790)  -- converts chat/tool wire format
-        | Amazon Bedrock Converse: toolUse / toolResult
+        | provider-native tool-call wire format
         v
 Claude Fable          -- chooses actions; grader records reward
         |
@@ -190,22 +190,22 @@ Qwen3-8B SFT + explicitly labeled same-task base-vs-distilled evaluation</div>
     <h2 id="collect">2. Collecting the observable trajectory</h2>
 
     <h3>2.1 Keep credentials out of code and logs</h3>
-    <p>The Bedrock bearer key lives in a private file outside the repository, with mode 0600. The
+    <p>The teacher API key lives in a private file outside the repository, with mode 0600. The
     bridge reads the file at startup; the harness itself receives only a dummy local key.</p>
 
     <pre><code>install -m 700 -d ~/.config/agent-distill
-read -rsp 'Bedrock key: ' KEY_INPUT; echo
-printf '%s' "$KEY_INPUT" &gt; ~/.config/agent-distill/bedrock.key
+read -rsp 'Teacher API key: ' KEY_INPUT; echo
+printf '%s' "$KEY_INPUT" &gt; ~/.config/agent-distill/teacher-api.key
 unset KEY_INPUT
-chmod 600 ~/.config/agent-distill/bedrock.key
+chmod 600 ~/.config/agent-distill/teacher-api.key
 
-export AWS_BEARER_TOKEN_BEDROCK_FILE=~/.config/agent-distill/bedrock.key
-export BEDROCK_MODEL_ID='us.anthropic.claude-fable-5'
-export BEDROCK_ENDPOINT='https://bedrock-runtime.&lt;region&gt;.amazonaws.com'</code></pre>
+export TEACHER_API_KEY_FILE=~/.config/agent-distill/teacher-api.key
+export TEACHER_MODEL_ID='claude-fable-5'
+export TEACHER_API_ENDPOINT='https://&lt;provider-endpoint&gt;'</code></pre>
 
     <p>The local bridge translates the OpenAI chat/tool schema used by the evaluation harness into
-    Bedrock Converse blocks. In particular, assistant tool calls become <code>toolUse</code>, tool
-    observations become <code>toolResult</code>, and the response is converted back without dropping
+    the provider's native blocks. In particular, assistant tool calls and tool
+    observations are mapped to the provider's tool-call and tool-result forms, and the response is converted back without dropping
     call IDs. A health endpoint validates configuration without spending tokens, while a stats
     endpoint reports request, retry and token counts without logging prompts or secrets.</p>
 
@@ -229,7 +229,7 @@ export BEDROCK_ENDPOINT='https://bedrock-runtime.&lt;region&gt;.amazonaws.com'</
 
     <p>We initially discovered extreme context replay: a single agent can resend a very long history
     dozens of times. A 30-turn cap and a 15&ndash;30 minute episode timeout bound the tail without imposing
-    an arbitrary cap on the total campaign size. For the long run we kept Bedrock concurrency at 2;
+    an arbitrary cap on the total campaign size. For the long run we kept teacher API concurrency at 2;
     higher concurrency was not useful enough to justify harder rate-limit and cost behavior.</p>
 
     <h3>2.3 Preserve attempts, not just successes</h3>
@@ -330,7 +330,7 @@ export BEDROCK_ENDPOINT='https://bedrock-runtime.&lt;region&gt;.amazonaws.com'</
     a foreground timeout with a short TERM grace period. A separate recovery worker polls every 60
     seconds, rebuilds the canonical snapshot, and annotates only new envelope IDs.</p>
 
-    <pre><code>collector (Bedrock concurrency 2)
+    <pre><code>collector (teacher API concurrency 2)
   -> append raw trace
   -> update attempts/success/error counters
 
@@ -374,6 +374,6 @@ at deadline:
     black-box, tool-using teacher's observable behavior into a reproducible, auditable training corpus,
     while making the synthetic part impossible to mistake for the original.</p>
 
-    <p>Implementation: <a href="https://github.com/wdlctc/bedrock-kimi-distill">bedrock-kimi-distill on GitHub</a>.</p>
+    <p>Implementation: <a href="https://github.com/wdlctc/bedrock-kimi-distill">the pipeline repository on GitHub</a>.</p>
 </body>
 </html>

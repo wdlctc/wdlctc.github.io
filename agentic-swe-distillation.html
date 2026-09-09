@@ -257,7 +257,7 @@
             </section>
             <section class="track track-b">
                 <h3>Track B &mdash; behavior plus annotation</h3>
-                <p><strong>Claude Fable</strong> supplies observable actions through Amazon Bedrock,
+                <p><strong>Claude Fable</strong> supplies observable actions through API access,
                 but no teacher reasoning. A second model writes a causal, post-hoc rationale for each
                 already-chosen action without seeing the future.</p>
                 <p><strong>Question:</strong> can synthetic explanations recover the same transfer?</p>
@@ -284,7 +284,7 @@
                                                           |
            OpenAI-compatible agent harness                |
                          |                                |
-           Bedrock Converse bridge                        |
+           teacher API bridge                             |
                          |                                |
              Claude Fable actions                         |
                          |                                |
@@ -372,14 +372,14 @@ uv run --no-sync python conv_traces_to_sft.py \
 
         <h2 id="track-b"><span class="step">4</span>Track B: Claude Fable behavior plus synthetic rationale</h2>
 
-        <h3>4.1 Bridging the agent harness to Bedrock</h3>
+        <h3>4.1 Bridging the agent harness to the teacher API</h3>
         <p>The evaluation harness speaks an OpenAI-compatible message and tool schema. A local bridge
-        converts assistant tool calls to Bedrock <code>toolUse</code> blocks, observations to
-        <code>toolResult</code> blocks, and converts Fable's response back without losing call IDs. The
+        converts assistant tool calls to the provider's native tool-call blocks, observations to
+        tool-result blocks, and converts Fable's response back without losing call IDs. The
         behavior trace&mdash;actions, edits, observations and final answer&mdash;is appended to immutable
         JSONL before any rationale is added.</p>
 
-        <pre><code>scripts/start_bedrock_proxy.sh
+        <pre><code>scripts/start_teacher_proxy.sh
 
 uv run eval scaleswe \
   -m claude-fable-5 \
@@ -724,7 +724,7 @@ bash eval_student.sh scaleswe_v1 qwen3-distilled \
         <h3>Artifacts</h3>
         <ul>
             <li><a href="cot-recovery-demo.html">Causal CoT Completion</a>: prefix-only synthetic rationale walkthrough and optional live BYOK annotator.</li>
-            <li><a href="https://github.com/wdlctc/bedrock-kimi-distill">bedrock-kimi-distill</a>: Bedrock bridge, causal rationale recovery, validation, SFT export and evaluation helpers.</li>
+            <li><a href="https://github.com/wdlctc/bedrock-kimi-distill">distillation pipeline</a>: teacher API bridge, causal rationale recovery, validation, SFT export and evaluation helpers.</li>
             <li><a href="https://huggingface.co/datasets/Linz99/kimi-k3-scaleswe-distill-traces">Linz99/kimi-k3-scaleswe-distill-traces</a>: direct Kimi-K3 training snapshots at multiple scales.</li>
             <li><a href="https://github.com/PrimeIntellect-ai/prime-rl">Prime-RL</a>: the SFT training stack used for Qwen3-8B.</li>
         </ul>
