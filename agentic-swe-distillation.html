@@ -186,7 +186,7 @@
         grader-verified reasoning-and-action trajectories, what changes when Claude Fable supplies
         only observable behavior, and how we made the whole data &rarr; SFT &rarr; evaluation loop
         reproducible.</p>
-        <p class="authors">Cheng Luo &mdash; August 2026</p>
+        <p class="authors">Cheng Luo &mdash; August 2026, updated September 2026</p>
         <div class="links">
             <a href="cot-recovery-demo.html">Interactive CoT completion demo</a>
             <a href="https://github.com/wdlctc/bedrock-kimi-distill">Fable pipeline code</a>
@@ -200,8 +200,8 @@
                 <span>final direct-Kimi Scale-SWE held-out pass@1, versus 1.1% for base</span>
             </div>
             <div class="metric">
-                <strong>7 / 83</strong>
-                <span>Fable+Kimi strict held-out solves, versus 0/83 for base</span>
+                <strong>37.5%</strong>
+                <span>Fable+Kimi held-out pass@1 at 2,349 solved-only traces, versus 2.1% for base</span>
             </div>
             <div class="metric">
                 <strong>~450 traces</strong>
@@ -428,7 +428,7 @@ uv run export-distill-sft \
         both outcomes. This is useful for studying observable behavior, but it also means that a direct
         numerical comparison between tracks mixes rationale provenance with training-data selection.</p>
 
-        <h3>4.3 The result: in-distribution transfer, weak generalization</h3>
+        <h3>4.3 The pilot result: in-distribution transfer, weak generalization</h3>
         <table>
             <thead>
                 <tr>
@@ -452,11 +452,13 @@ uv run export-distill-sft \
         </table>
 
         <div class="callout negative">
-            <strong>Negative result, not a footnote.</strong> The Fable+Kimi student improved on the
-            source distribution but regressed on the no-overlap SWE-bench run and timed out much more
-            often. The OpenAI-annotated variant transferred even less in-distribution and also increased
-            timeouts. Synthetic rationale was therefore not a drop-in replacement for the teacher-supplied
-            reasoning in Track A.
+            <strong>Negative pilot result, revised at scale.</strong> At 829 mixed-reward rows, the
+            Fable+Kimi student improved on the source distribution but regressed on the no-overlap
+            SWE-bench run and timed out much more often. The OpenAI-annotated variant transferred even
+            less in-distribution and also increased timeouts. At this scale and data policy, synthetic
+            rationale was not a drop-in replacement for the teacher-supplied reasoning in Track A.
+            Section 4.4 revises the in-distribution half of this conclusion with a 2.8&times; larger,
+            solved-only corpus.
         </div>
 
         <p>A plausible interpretation is that the post-hoc rationales taught longer or more brittle
@@ -464,6 +466,57 @@ uv run export-distill-sft \
         improving cross-repository generalization. That is an inference from the pass rates and timeout
         counts, not a proven causal mechanism. A controlled ablation would hold behavior traces, reward
         policy, token budget and training exposure fixed while changing only the rationale source.</p>
+
+        <h3>4.4 September update: scaling Track B to 2,349 solved-only traces</h3>
+
+        <p>The pilot mixed 689 reward-positive with 140 reward-zero rows. The completed recovery
+        campaign produced a much larger corpus: <strong>2,787</strong> fully recovered Fable traces
+        (84.3% grader-solved, 638 unique repositories, every assistant turn carrying one Kimi-K3
+        causal rationale). Adopting Track A's data policy, we exported the <strong>2,349</strong>
+        reward-positive traces only and ran one epoch of the same SFT recipe (300 steps, batch 8,
+        49,152-token sequences, four H100s, roughly three hours; training loss 1.26 &rarr; 0.48).</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Scale-SWE paired eval (n=50 per condition)</th>
+                    <th>Base Qwen3-8B</th>
+                    <th>Fable+Kimi, 2,349 solved-only</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Same-task (training instances)</td>
+                    <td>0/49 &mdash; 0.0%</td>
+                    <td><strong>21/49 &mdash; 42.9%</strong></td>
+                </tr>
+                <tr>
+                    <td>Strict held-out (all 2,787 seen tasks excluded before sampling)</td>
+                    <td>1/48 &mdash; 2.1%</td>
+                    <td><strong>18/48 &mdash; 37.5%</strong></td>
+                </tr>
+                <tr>
+                    <td>Common-task intersection (n=47)</td>
+                    <td>2.1%</td>
+                    <td><strong>36.2%</strong> (distilled-only wins 17, base-only 1)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>Reliability did not degrade in this run: each condition lost 2 of 50 episodes to errors,
+        with no timeout asymmetry between base and distilled, under a 1,800-second episode cap and a
+        16,384-token generation limit. The held-out figure now exceeds Track A's 25.0% by 12.5
+        percentage points.</p>
+
+        <div class="callout warning">
+            <strong>What this does and does not revise.</strong> The scaled run overturns the pilot's
+            in-distribution conclusion: with enough solved-only behavior, Fable actions plus causal
+            synthetic rationale transfer strongly on strict held-out Scale-SWE. It is still not a
+            one-variable ablation &mdash; data volume (2.8&times;), reward filtering (solved-only versus
+            mixed) and evaluation limits (longer episode and generation caps) all changed together.
+            The SWE-bench Verified cross-benchmark, where the pilot regressed, has not yet been rerun
+            for this checkpoint; the cross-benchmark half of the pilot conclusion stands untested.
+        </div>
 
         <h2 id="integrity"><span class="step">5</span>Causal integrity and provenance</h2>
 
@@ -582,7 +635,8 @@ bash eval_student.sh scaleswe_v1 qwen3-distilled \
         <p>A model that solves more completed episodes by thinking longer can still be worse operationally
         if it doubles the timeout rate. We therefore report graded tasks, solves and failure categories,
         not just the percentage among successful completions. This is especially important for Track B,
-        where synthetic rationale students timed out much more often.</p>
+        where the pilot-scale synthetic rationale students timed out much more often (the scaled
+        solved-only run showed no such asymmetry).</p>
 
         <h2 id="operations"><span class="step">8</span>What broke in production</h2>
 
@@ -618,9 +672,11 @@ bash eval_student.sh scaleswe_v1 qwen3-distilled \
             <li><strong>Reasoning provenance matters.</strong> A rationale written after an action is not
             semantically equivalent to the reasoning supplied by the model that chose the action, even if
             both fit into the same JSON field.</li>
-            <li><strong>In-distribution gain is not generalization.</strong> Fable+Kimi improved on strict
-            held-out Scale-SWE but regressed on SWE-bench and reliability. The cross-benchmark result changes
-            the conclusion.</li>
+            <li><strong>In-distribution gain is not generalization &mdash; and scale plus filtering can
+            change the picture.</strong> The 829-row mixed-reward Fable+Kimi pilot regressed on SWE-bench
+            and reliability. The 2,349-row solved-only run reached 37.5% on strict held-out Scale-SWE with
+            no reliability penalty, exceeding Track A. The cross-benchmark rerun is the open item that
+            decides between the two readings.</li>
             <li><strong>Timeouts are model behavior.</strong> Longer synthetic reasoning can change completion
             rates enough that pass@1 without failure counts becomes misleading.</li>
             <li><strong>Provenance should be impossible to drop accidentally.</strong> Teacher, annotator,
@@ -632,12 +688,14 @@ bash eval_student.sh scaleswe_v1 qwen3-distilled \
 
         <div class="callout success">
             <strong>Bottom line.</strong> Offline trace SFT can turn Qwen3-8B into a meaningfully stronger
-            coding agent with only hundreds of high-quality trajectories. The strongest result came from
-            grader-verified Kimi-K3 action-and-reasoning traces: 25.0% versus 1.1% on held-out Scale-SWE and
-            9.2% versus 4.3% on SWE-bench Verified. Observable Fable behavior plus causal synthetic rationale
-            showed narrower transfer and worse reliability. Synthetic explanation is useful data, but it
-            should not be presented as recovered teacher thought or assumed to substitute for teacher-supplied
-            reasoning.
+            coding agent with a few thousand high-quality trajectories. Grader-verified Kimi-K3
+            action-and-reasoning traces reached 25.0% versus 1.1% on held-out Scale-SWE and 9.2% versus
+            4.3% on SWE-bench Verified. At pilot scale, observable Fable behavior plus causal synthetic
+            rationale showed narrower transfer and worse reliability; at 2,349 solved-only traces the same
+            pipeline reached 42.9% same-task and 37.5% strict held-out with no reliability penalty, the
+            strongest in-distribution result in this study, with the SWE-bench rerun still pending.
+            Synthetic explanation is genuinely useful data, but it should not be presented as recovered
+            teacher thought, and its value depends on reward filtering and scale.
         </div>
 
         <h2 id="reproduce"><span class="step">10</span>Compact reproduction recipe</h2>
