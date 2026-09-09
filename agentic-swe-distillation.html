@@ -469,8 +469,8 @@ uv run export-distill-sft \
 
         <h3>4.4 September update: scaling Track B to 2,349 solved-only traces</h3>
 
-        <p>The pilot mixed 689 reward-positive with 140 reward-zero rows. The completed recovery
-        campaign produced a much larger corpus: <strong>2,787</strong> fully recovered Fable traces
+        <p>The pilot mixed 689 reward-positive with 140 reward-zero rows. The recovery campaign's
+        frozen 2026-09-04 snapshot is a much larger corpus: <strong>2,787</strong> fully recovered Fable traces
         (84.3% grader-solved, 638 unique repositories, every assistant turn carrying one Kimi-K3
         causal rationale). Adopting Track A's data policy, we exported the <strong>2,349</strong>
         reward-positive traces only and ran one epoch of the same SFT recipe (300 steps, batch 8,
@@ -503,9 +503,9 @@ uv run export-distill-sft \
             </tbody>
         </table>
 
-        <p>Reliability did not degrade in this run: each condition lost 2 of 50 episodes to errors,
-        with no timeout asymmetry between base and distilled, under a 1,800-second episode cap and a
-        16,384-token generation limit. The held-out figure now exceeds Track A's 25.0% by 12.5
+        <p>Reliability did not degrade in this run: every lost episode was an 1,800-second episode
+        timeout, symmetric across conditions (one per condition same-task, two per condition
+        held-out), under a 16,384-token generation limit. The held-out figure now exceeds Track A's 25.0% by 12.5
         percentage points.</p>
 
         <div class="callout warning">
