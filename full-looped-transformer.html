@@ -94,6 +94,11 @@
 
     <h1>Full Looped Transformer: Feeding the Model's Own Predictions Back Into the Loop</h1>
     <p><em>September 2026</em></p>
+    <p><strong>Code:</strong>
+        <a href="https://github.com/wdlctc/full-looped-transformer-code">GitHub repository</a>
+        &middot; <a href="#code">Training and evaluation</a>
+        &middot; <a href="#downstream-results">Downstream results</a>
+    </p>
 
     <div class="warning">
         <strong>Relation to prior work.</strong> After running these experiments we found
@@ -305,6 +310,18 @@
 
     <p>We read the agreement between the two independent designs as the interesting part:
     the carried object at a loop junction should be a <em>belief</em>, not just a state.</p>
+
+    <h2 id="code">Code and reproduction</h2>
+    <p>The code is available on
+    <a href="https://github.com/wdlctc/full-looped-transformer-code">GitHub</a>
+    under the MIT license. The release includes the experiment's model and training
+    implementation, data preparation, all six
+    <a href="https://github.com/wdlctc/full-looped-transformer-code/blob/main/configs/experiments.json">experiment configurations</a>,
+    the <a href="https://github.com/wdlctc/full-looped-transformer-code/blob/main/eval/downstream.py">downstream evaluator</a>,
+    and <a href="https://github.com/wdlctc/full-looped-transformer-code/tree/main/results">recorded results in JSON and CSV</a>.</p>
+    <p>The <a href="https://github.com/wdlctc/full-looped-transformer-code#quick-start">README</a>
+    provides a small CPU example and instructions for the 8-GPU, 10B-token recipe.
+    Trained checkpoints and the training corpus are not included in this release.</p>
 
     <h2>Honest limitations</h2>
     <div class="warning">
