@@ -64,6 +64,14 @@
         th:first-child, td:first-child { text-align: left; }
         th { background-color: #f2f2f2; }
         .back-link { margin-bottom: 20px; }
+        .architecture-figure { margin: 24px 0; }
+        .architecture-figure img { display: block; width: 100%; height: auto; }
+        .architecture-figure figcaption {
+            margin-top: 12px;
+            font-size: 0.9em;
+            color: #555;
+            line-height: 1.55;
+        }
     </style>
 </head>
 <body>
@@ -116,6 +124,31 @@
     embedding matrix, at every junction:</p>
 
     $$r_\ell = \mathrm{dec}(s_\ell)\,E, \qquad s_\ell \leftarrow s_\ell + r_\ell W_o^\top$$
+
+    <figure class="architecture-figure" id="figure-1">
+        <a href="full-looped-transformer-fig1.svg" target="_blank" rel="noopener"
+           aria-label="Open Figure 1 at full size">
+            <img src="full-looped-transformer-fig1.svg" width="1600" height="1070"
+                 alt="Three-panel comparison of dense8L, plain looping, and Full Looped Transformer. Full looping preserves each hidden state and adds its projected expected next-token embedding after every pass. An inset shows the tied decoder, soft re-embedding, and zero-initialized projection. Validation losses are 2.9064, 2.8647, and 2.8145, respectively.">
+        </a>
+        <figcaption>
+            <strong>Figure 1. From dense layers to full looping.</strong>
+            <strong>(a)</strong> Dense8L visits four distinct middle layers once.
+            <strong>(b)</strong> Plain looping applies the same four-layer middle
+            stack three times, carrying hidden states between passes.
+            <strong>(c)</strong> Full looping also carries a projected expected
+            next-token embedding. At each position, the model decodes the current
+            middle-stack output $s_\ell$, softly re-embeds it with the tied matrix
+            $E$, and adds $r_\ell W_o^\top$ to the same hidden state. The inset
+            expands this branch; $W_o$ is zero-initialized and shared across passes.
+            Pass 2 is omitted visually; full-loop feedback runs after all three
+            passes, including before the coda. Scores are validation loss and the
+            six-task zero-shot mean (%) after 10B training tokens. Full looping
+            adds vocabulary-projection FLOPs; these arms are not compute-matched.
+            <em>Layout inspired by <a href="https://arxiv.org/pdf/2607.00341v2#page=3">DiscoLoop,
+            Figure 1</a>; diagrams and results depict this study.</em>
+        </figcaption>
+    </figure>
 
     <p>$r_\ell$ is the <em>expected next-token embedding</em> under the model's current
     belief — a convex combination of embedding rows, a point on the token manifold. $W_o$
