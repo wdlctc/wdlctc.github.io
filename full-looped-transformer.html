@@ -117,6 +117,19 @@
 
     $$r_\ell = \mathrm{dec}(s_\ell)\,E, \qquad s_\ell \leftarrow s_\ell + r_\ell W_o^\top$$
 
+    <figure style="text-align:center; margin: 20px 0;">
+        <img src="full-looped-transformer-fig1.svg" alt="Plain looped transformer vs. full looped transformer architecture diagram" style="max-width:100%;">
+        <figcaption style="font-size:0.9em; color:#666; text-align:left; margin-top:8px;">
+            <strong>Figure 1.</strong> (a) A plain looped transformer cycles the shared
+            middle stack, carrying only the hidden state between iterations. (b) The full
+            looped transformer decodes the iteration output into a next-token distribution
+            $p$ through the model's own exit pipeline, softly re-embeds it with the tied
+            embedding ($r = pE$), and adds it back through a zero-initialized projection
+            $W_o$ — so the loop body contains the LM head and the embedding, and each
+            iteration refines an explicit draft of the model's current belief.
+        </figcaption>
+    </figure>
+
     <p>$r_\ell$ is the <em>expected next-token embedding</em> under the model's current
     belief — a convex combination of embedding rows, a point on the token manifold. $W_o$
     ($d\times d$, the only new parameters, +1%) is <strong>zero-initialized</strong>, so at
