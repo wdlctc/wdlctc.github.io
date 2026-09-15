@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Full Looped Transformer: Feeding the Model's Own Predictions Back Into the Loop</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script>
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true
+            }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 { color: #2c3e50; }
+        h1 { font-size: 1.8em; }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .result {
+            background-color: #e6f3ff;
+            border-left: 4px solid #3498db;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .key-finding {
+            background-color: #eafaf1;
+            border-left: 4px solid #2ecc71;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .warning {
+            background-color: #fdf2e9;
+            border-left: 4px solid #e67e22;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+            font-size: 0.95em;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 6px 10px;
+            text-align: right;
+        }
+        th:first-child, td:first-child { text-align: left; }
+        th { background-color: #f2f2f2; }
+        .back-link { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="back-link"><a href="blogs.html">&larr; Back to blogs</a></div>
+
+    <h1>Full Looped Transformer: Feeding the Model's Own Predictions Back Into the Loop</h1>
+    <p><em>September 2026</em></p>
+
+    <div class="warning">
+        <strong>Relation to prior work.</strong> After running these experiments we found
+        <a href="https://arxiv.org/abs/2607.00341">DiscoLoop (Fu et al., 2026)</a>, which
+        arrives at the same core principle from a mechanistic-interpretability direction:
+        a looped transformer's recurrence should carry not just the continuous hidden state
+        but also a decoded, embedding-aligned rendering of the model's current prediction.
+        Our study was designed and run independently, but the central idea is the same, so
+        we are publishing it as a blog post — an independent replication with a different
+        instantiation and some complementary evidence — rather than as a paper. The
+        differences that may still be useful to others are summarized
+        <a href="#vs-discoloop">below</a>.
+    </div>
+
+    <h2>TL;DR</h2>
+    <div class="key-finding">
+        <p>In a looped (weight-tied, middle-cycle) transformer, we include the LM head and
+        the tied embedding <em>inside the loop</em>: at every loop junction, decode the
+        current state into a full next-token distribution, softly re-embed it with the tied
+        embedding matrix, and add a zero-initialized projection of this "draft prediction"
+        back to the residual stream. On a controlled 57M/10B-token A/B testbed this is worth
+        <strong>&minus;0.050 validation loss</strong> over the plain loop
+        (6.4&times; the cross-seed noise floor) and <strong>+0.74 mean zero-shot
+        accuracy</strong>, and the 57M looped model overtakes a 113M dense model of the same
+        unrolled depth on the downstream mean. A replacement variant — carrying <em>only</em>
+        the re-embedded prediction between iterations — destroys the model, locating the
+        value precisely: the prediction is a powerful auxiliary signal, not a substitute
+        for the latent state.</p>
+    </div>
+
+    <h2>The idea</h2>
+    <p>A looped transformer applies a shared middle stack $L$ times between a small prelude
+    and coda: parameters of an 8-layer model, computation of a 16-layer one. A stream of
+    recent work asks what should <em>cross the junction</em> between loop iterations —
+    input re-injection (Geiping et al., 2025), hyper-connections, adaptive depth routing
+    (Mixture-of-Recursions), per-layer recurrence
+    (<a href="https://arxiv.org/abs/2607.16051">Loop the Loopies</a>). All of these carry
+    <em>hidden states</em>. But the model's most semantically committed object — its current
+    next-token distribution — is normally computed exactly once, after the loop ends.</p>
+
+    <p>We make the loop <em>full</em>. With $\mathrm{dec}(x)$ the model's own exit pipeline
+    (RMSNorm &rarr; tied head &rarr; logit softcap &rarr; fp32 softmax) and $E$ the tied
+    embedding matrix, at every junction:</p>
+
+    $$r_\ell = \mathrm{dec}(s_\ell)\,E, \qquad s_\ell \leftarrow s_\ell + r_\ell W_o^\top$$
+
+    <p>$r_\ell$ is the <em>expected next-token embedding</em> under the model's current
+    belief — a convex combination of embedding rows, a point on the token manifold. $W_o$
+    ($d\times d$, the only new parameters, +1%) is <strong>zero-initialized</strong>, so at
+    step 0 the model is bitwise identical to the plain loop: the A/B isolates the mechanism,
+    and the feedback channel is opened by the data, not imposed. Each iteration then refines
+    a state that has seen an explicit token-space commitment of what the model currently
+    believes — draft-and-revise, in latent space, with no sampling and no extra tokens.</p>
+
+    <h2>Setup</h2>
+    <p>GPT-2-small-ish testbed: $d=768$, 12 heads, layout $[2 \rightarrow 4\times 3
+    \rightarrow 2]$ (8 physical / 16 unrolled layers), 10B ClimbMix tokens, 19,073 steps,
+    identical recipe for every arm (same seed, same data order). Noise scales measured on
+    this recipe: same-seed re-run band $\le 0.0036$ val loss, cross-seed floor $0.0079$.
+    Downstream: six zero-shot multiple-choice tasks at full size (HellaSwag, ARC-E/C,
+    OpenBookQA, PIQA, WinoGrande).</p>
+
+    <h2>Results</h2>
+
+    <table>
+        <tr><th>Arm</th><th>Params</th><th>val@10B</th><th>vs. plain</th><th>Downstream mean</th></tr>
+        <tr><td>dense8L (unshared, iso-param)</td><td>56.6M</td><td>2.9064</td><td>+0.0417</td><td>42.53</td></tr>
+        <tr><td>Layer loop (per-layer recurrence)</td><td>56.6M</td><td>2.8791</td><td>+0.0144</td><td>42.85</td></tr>
+        <tr><td>Plain loop</td><td>56.6M</td><td>2.8647</td><td>—</td><td>43.77</td></tr>
+        <tr><td><strong>Full loop (ours)</strong></td><td>57.2M</td><td><strong>2.8145</strong></td><td><strong>&minus;0.0502</strong></td><td><strong>44.51</strong></td></tr>
+        <tr><td>dense16L (unshared, 2&times; params)</td><td>113.3M</td><td>2.7867</td><td>&minus;0.0780</td><td>44.06</td></tr>
+        <tr><td>Replacement control</td><td>56.6M</td><td>5.9443</td><td>+3.08</td><td>34.82 (&asymp;chance)</td></tr>
+    </table>
+
+    <div class="result">
+        <p><strong>Decomposition at fixed 57M parameters.</strong> Weight-tied looping buys
+        &minus;0.042 val / +1.24 mean over the unrolled-once dense model; prediction feedback
+        buys a further <strong>&minus;0.050 val / +0.74 mean on top</strong> — the junction
+        rule contributes more than the loop itself. The four iso-parameter arms order
+        identically on validation loss and downstream mean (dense8L &lt; layer loop &lt;
+        plain loop &lt; full loop): two independent measurements agreeing on every pairwise
+        comparison.</p>
+    </div>
+
+    <p>The margin over the plain loop grows monotonically through 8B tokens
+    (&minus;.0102, &minus;.0319, &minus;.0389, &minus;.0430, &minus;.0473, &minus;.0486,
+    &minus;.0503, &minus;.0506 at 1&ndash;8B) and holds at &asymp;0.050 to the end — the
+    signature of a mechanism whose value compounds as predictions sharpen. Notably, the
+    57M full loop <em>beats the 113M dense16L on the downstream mean</em> (44.51 vs.
+    44.06): weight-tied depth plus prediction feedback outperformed doubling parameters
+    on this suite.</p>
+
+    <h2>Two probes that pin down where the value lives</h2>
+
+    <p><strong>Replacement control.</strong> The literal reading of "loop the whole model"
+    — embedding &rarr; trunk &rarr; head &rarr; re-embed, with the token distribution as the
+    <em>only</em> carrier between iterations — collapses catastrophically (val 5.94;
+    chance-level downstream). It spends the same extra FLOPs on the same matrices and
+    destroys the model, so the gain of the residual form is not "just more compute", and a
+    convex combination of embedding rows cannot carry the residual stream's working state.
+    Prediction feedback helps exactly when it is <em>added to</em> an intact latent state.</p>
+
+    <p><strong>Is the channel actually used?</strong> The zero-initialized $W_o$ doubles as
+    a usage meter. After training: $\|W_o\|_F = 371$, top singular value 138 with a broad
+    tail, effective rank 697/768. Near-full-rank and strongly weighted — the model routes
+    real information through the prediction channel rather than silencing it (the classic
+    failure mode of gated junction mechanisms).</p>
+
+    <h2 id="vs-discoloop">Same principle as DiscoLoop, different instantiation</h2>
+
+    <p><a href="https://arxiv.org/abs/2607.00341">DiscoLoop</a> identifies (via careful
+    mechanistic analysis of two-hop reasoning) a representation bottleneck: after a loop,
+    the answer is often decodable from the hidden state, yet the state is misaligned with
+    the token embedding the next loop would ideally consume. Their fix carries a discrete
+    embedding channel alongside the continuous state. We arrived at the same principle from
+    the architecture side ("the loop body should include the head and the embedding").
+    Differences in instantiation:</p>
+
+    <table>
+        <tr><th></th><th>DiscoLoop</th><th>Full loop (this post)</th></tr>
+        <tr><td>Feedback signal</td><td>decoded embedding channel</td><td>full-softmax <em>expected</em> embedding $p^\top E$ (soft, differentiable end-to-end)</td></tr>
+        <tr><td>Injection</td><td>dedicated discrete channel</td><td>residual write-back through zero-init $W_o$ (bitwise plain-loop at init)</td></tr>
+        <tr><td>Decode path</td><td>—</td><td>the model's own exit pipeline incl. softcap, trained from three sides via the tied $E$</td></tr>
+        <tr><td>Main evidence</td><td>mechanistic interpretability + reasoning tasks + pretraining</td><td>controlled same-seed pretraining A/B; loop-vs-feedback decomposition; replacement negative control; recurrence-pattern comparison; $W_o$ spectrum</td></tr>
+    </table>
+
+    <p>We read the agreement between the two independent designs as the interesting part:
+    the carried object at a loop junction should be a <em>belief</em>, not just a state.</p>
+
+    <h2>Honest limitations</h2>
+    <div class="warning">
+        <p>(1) <strong>Not iso-FLOP vs. the plain loop</strong>: the junction decode roughly
+        doubles per-token FLOPs at $d=768$, $|V|=50\text{k}$ (the surcharge shrinks with
+        width — at $d=1280$ it is already only &asymp;25%). The replacement control rules
+        out the crudest compute-only explanation, and doubling parameters in a dense stack
+        (dense16L) is a worse downstream trade, but a width-matched plain control is the
+        right missing experiment. (2) <strong>Single seed</strong> per arm — though the
+        headline margin is 6.4&times; the measured cross-seed floor. (3) 57M/10B, one
+        architecture family; larger-scale replication is in progress.</p>
+    </div>
+
+    <p><em>Testbed: 8&times;H100, ~2.5h per arm; six-task zero-shot eval at full test-set
+    size. All arms share byte-identical data order and hyperparameters.</em></p>
+
+</body>
+</html>
