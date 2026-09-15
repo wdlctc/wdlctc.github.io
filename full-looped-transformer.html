@@ -168,16 +168,18 @@
     <p><strong>Replacement control.</strong> The literal reading of "loop the whole model"
     — embedding &rarr; trunk &rarr; head &rarr; re-embed, with the token distribution as the
     <em>only</em> carrier between iterations — collapses catastrophically (val 5.94;
-    chance-level downstream). It spends the same extra FLOPs on the same matrices and
-    destroys the model, so the gain of the residual form is not "just more compute", and a
+    chance-level downstream). It pushes the same per-junction decode through the same
+    vocabulary matrices (at two of the three junctions — the last is left intact so the
+    coda is not sabotaged — about two-thirds of the extra FLOPs) and destroys the
+    model, so the gain of the residual form is not "just more compute", and a
     convex combination of embedding rows cannot carry the residual stream's working state.
     Prediction feedback helps exactly when it is <em>added to</em> an intact latent state.</p>
 
     <p><strong>Is the channel actually used?</strong> The zero-initialized $W_o$ doubles as
     a usage meter. After training: $\|W_o\|_F = 371$, top singular value 138 with a broad
     tail, effective rank 697/768. Near-full-rank and strongly weighted — the model routes
-    real information through the prediction channel rather than silencing it (the classic
-    failure mode of gated junction mechanisms).</p>
+    real information through the prediction channel rather than silencing it (a common
+    failure mode of gated mechanisms, which a scalar gate would have made easy here).</p>
 
     <h2 id="vs-discoloop">Same principle as DiscoLoop, different instantiation</h2>
 
@@ -193,7 +195,7 @@
         <tr><th></th><th>DiscoLoop</th><th>Full loop (this post)</th></tr>
         <tr><td>Feedback signal</td><td>decoded embedding channel</td><td>full-softmax <em>expected</em> embedding $p^\top E$ (soft, differentiable end-to-end)</td></tr>
         <tr><td>Injection</td><td>dedicated discrete channel</td><td>residual write-back through zero-init $W_o$ (bitwise plain-loop at init)</td></tr>
-        <tr><td>Decode path</td><td>—</td><td>the model's own exit pipeline incl. softcap, trained from three sides via the tied $E$</td></tr>
+        <tr><td>Decode path</td><td>(see their paper for details)</td><td>the model's own exit pipeline incl. softcap, trained from three sides via the tied $E$</td></tr>
         <tr><td>Main evidence</td><td>mechanistic interpretability + reasoning tasks + pretraining</td><td>controlled same-seed pretraining A/B; loop-vs-feedback decomposition; replacement negative control; recurrence-pattern comparison; $W_o$ spectrum</td></tr>
     </table>
 
@@ -212,8 +214,9 @@
         architecture family; larger-scale replication is left as future work.</p>
     </div>
 
-    <p><em>Testbed: 8&times;H100, ~2.5h per arm; six-task zero-shot eval at full test-set
-    size. All arms share byte-identical data order and hyperparameters.</em></p>
+    <p><em>Testbed: 8&times;H100, 2.5&ndash;6h per arm (the full loop is the slowest —
+    the vocabulary decode is most expensive at small width); six-task zero-shot eval at
+    full test-set size. All arms share byte-identical data order and hyperparameters.</em></p>
 
 </body>
 </html>
