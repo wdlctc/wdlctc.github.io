@@ -72,6 +72,21 @@
             color: #555;
             line-height: 1.55;
         }
+        .table-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+        .downstream-table {
+            min-width: 760px;
+            margin: 0;
+            font-size: 0.88em;
+            font-variant-numeric: tabular-nums;
+        }
+        .downstream-table th, .downstream-table td { white-space: nowrap; }
+        .downstream-table tbody th { background: transparent; font-weight: normal; }
+        .downstream-table .ours { background-color: #eafaf1; }
+        .evaluation-note { font-size: 0.9em; color: #555; }
     </style>
 </head>
 <body>
@@ -195,6 +210,62 @@
     57M full loop <em>beats the 113M dense16L on the downstream mean</em> (44.51 vs.
     44.06): weight-tied depth plus prediction feedback outperformed doubling parameters
     on this suite.</p>
+
+    <h2 id="downstream-results">Downstream evaluation</h2>
+
+    <p>We evaluate all six arms at the end of 10B-token training using the same
+    zero-shot multiple-choice scorer. Each candidate is scored by its continuation
+    log-likelihood, with no few-shot examples or generated chain of thought. The
+    table reports accuracy in percent; <strong>bold</strong> marks the best score
+    in each column.</p>
+
+    <div class="table-scroll" role="region" aria-labelledby="downstream-results" tabindex="0">
+        <table class="downstream-table">
+            <thead>
+                <tr>
+                    <th scope="col">Arm</th>
+                    <th scope="col">HellaSwag</th>
+                    <th scope="col">ARC-E</th>
+                    <th scope="col">ARC-C</th>
+                    <th scope="col">OBQA</th>
+                    <th scope="col">PIQA</th>
+                    <th scope="col">WinoGrande</th>
+                    <th scope="col">Mean</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><th scope="row">dense8L</th><td>33.15</td><td>49.16</td><td>25.68</td><td>30.80</td><td>66.59</td><td>49.80</td><td>42.53</td></tr>
+                <tr><th scope="row">Layer loop</th><td>33.89</td><td>50.04</td><td>27.56</td><td>28.00</td><td>65.45</td><td><strong>52.17</strong></td><td>42.85</td></tr>
+                <tr><th scope="row">Plain loop</th><td>34.03</td><td>52.23</td><td>25.85</td><td><strong>32.20</strong></td><td>66.43</td><td>51.85</td><td>43.77</td></tr>
+                <tr class="ours"><th scope="row"><strong>Full loop (ours)</strong></th><td><strong>35.93</strong></td><td><strong>54.63</strong></td><td><strong>28.24</strong></td><td>30.40</td><td>67.36</td><td>50.51</td><td><strong>44.51</strong></td></tr>
+                <tr><th scope="row">dense16L</th><td>35.78</td><td>53.49</td><td>26.71</td><td>30.00</td><td><strong>67.68</strong></td><td>50.67</td><td>44.06</td></tr>
+                <tr><th scope="row">Replacement control</th><td>25.28</td><td>29.04</td><td>23.04</td><td>28.40</td><td>53.21</td><td>49.96</td><td>34.82</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <p class="evaluation-note"><strong>Metrics.</strong> HellaSwag, ARC-Easy,
+    ARC-Challenge, and OpenBookQA use <code>acc_norm</code>: choose the candidate
+    with the highest continuation log-likelihood divided by its UTF-8 byte length.
+    PIQA and WinoGrande use <code>acc</code>, without length normalization;
+    WinoGrande scores only the shared suffix after the substituted option.
+    The mean is the unweighted average of the six task scores, computed before
+    rounding. Values are displayed to two decimals; headline mean differences in
+    this post use those displayed means.
+    <a href="raw/full-looped-transformer/downstream-results.csv" download>Download
+    the unrounded scores (CSV)</a>.</p>
+
+    <p class="evaluation-note"><strong>Evaluation splits.</strong> HellaSwag:
+    validation, 10,042 examples; ARC-Easy: test, 2,376; ARC-Challenge: test, 1,172;
+    OpenBookQA: test, 500; PIQA: validation, 1,838; WinoGrande:
+    <code>winogrande_xl</code> validation, 1,267. Every arm uses these full splits.</p>
+
+    <p><strong>Where the gain comes from.</strong> Full loop improves on plain loop
+    in four of six tasks, led by HellaSwag (+1.9 percentage points), ARC-Easy (+2.4),
+    and ARC-Challenge (+2.4). PIQA also improves, while OpenBookQA and WinoGrande
+    favor the plain loop. Full loop has the highest overall mean (44.51), ahead of
+    both plain loop (43.77) and dense16L (44.06). These are single-seed comparisons;
+    the mean advantage does not imply an improvement on every task.</p>
 
     <h2>Two probes that pin down where the value lives</h2>
 
