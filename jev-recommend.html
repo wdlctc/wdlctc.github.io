@@ -102,7 +102,7 @@
     <div class="key-finding">
         <ul style="margin:0">
             <li><strong>Encode the user once.</strong> A block attention mask with position ids restarting after the state computes
-            <em>exactly</em> the Open-Jev pointwise function (verified in fp32; same metrics in bf16) while processing
+            <em>exactly</em> the Jev pointwise function (verified in fp32; same metrics in bf16) while processing
             <strong>10&times; fewer tokens at K=20 and 16&times; at K=100</strong>, and this holds during training too.</li>
             <li><strong>Letting candidates compete did not help.</strong> A kev-style decide token that sees all candidates learns
             real weights and flips 8% of top-1 choices, but quality is unchanged with random negatives and 0.6 points lower with
@@ -131,7 +131,7 @@
     <div class="table-wrap">
     <table>
         <tr><th>mode</th><th>layout</th><th>state encoded</th><th>candidates interact</th></tr>
-        <tr><td><code>pointwise</code></td><td>Open-Jev: one sequence per (state, candidate), plain causal attention</td><td>K times</td><td>no</td></tr>
+        <tr><td><code>pointwise</code></td><td>Jev pointwise: one sequence per (state, candidate), plain causal attention</td><td>K times</td><td>no</td></tr>
         <tr><td><code>isolated</code></td><td>one sequence per request; block mask, position ids restart after the state</td><td>once</td><td>no</td></tr>
         <tr><td><code>listwise</code></td><td><code>isolated</code> + a decide segment that attends to everything; low-rank bilinear term between decide and each candidate, zero-initialised</td><td>once</td><td>via decide</td></tr>
     </table>
@@ -142,7 +142,7 @@
     positions as it would alone. That makes <code>isolated</code> the pointwise function, computed with one pass over the
     state.</p>
     <p>Two practical notes. The mask trick needs a pure-attention backbone: linear-attention or SSM layers (for example Qwen3.5's
-    Gated DeltaNet) ignore attention masks, which is why Open-Jev and kev fall back to one row per candidate with a forked
+    Gated DeltaNet) ignore attention masks, which is why existing open reimplementations fall back to one row per candidate with a forked
     state cache on those models. And because the equivalence holds for the training forward pass too, you get the saving
     during training, not only at inference.</p>
 
