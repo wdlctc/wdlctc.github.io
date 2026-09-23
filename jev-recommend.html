@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jev as a Recommender: One Forward Pass, K Calibrated Candidates</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 { color: #2c3e50; }
+        h1 { font-size: 1.8em; }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .result {
+            background-color: #e6f3ff;
+            border-left: 4px solid #3498db;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .key-finding {
+            background-color: #eafaf1;
+            border-left: 4px solid #2ecc71;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .warning {
+            background-color: #fdf2e9;
+            border-left: 4px solid #e67e22;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+            font-size: 0.92em;
+        }
+        .table-wrap { overflow-x: auto; }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 6px 10px;
+            text-align: left;
+        }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        tr:nth-child(even) { background-color: #fafafa; }
+        img { max-width: 100%; height: auto; margin: 15px 0; }
+        .caption { color: #666; font-size: 0.9em; margin-top: -8px; }
+        .authors { color: #666; font-style: italic; margin-bottom: 20px; }
+        .links a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #0066cc;
+            font-weight: bold;
+        }
+        .links { margin-bottom: 25px; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About</a>
+        <a href="research.html">Research</a>
+        <a href="blogs.html">Blogs</a>
+    </nav>
+
+    <h1>Jev as a Recommender: One Forward Pass, K Calibrated Candidates</h1>
+
+    <p class="authors">Cheng Luo &mdash; September 2026</p>
+
+    <div class="links">
+        <a href="https://github.com/wdlctc/jev-recommend">Code</a>
+        <a href="https://github.com/wdlctc/jev-recommend/releases">Weights &amp; logits</a>
+    </div>
+
+    <p>TypeSafe's <strong>Jev</strong> is an LLM that never writes text: it reads a state, answers typed questions
+    (<em>Choice</em>, <em>Score</em>, yes/no) and returns calibrated probabilities in one pass. Read with recommender-system eyes,
+    that is a ranking model: the state is the user, the options of a <em>Choice</em> are the candidate items, and the
+    calibrated probability is a pCTR. This post takes that reading literally. We build Jev-style scorers on Qwen3, train them on
+    MovieLens-1M, and ask three questions:</p>
+    <ol>
+        <li>How should K candidates share one state? The open reimplementations disagree.</li>
+        <li>How does a text-reading scorer compare with a classic ID-based sequential recommender on the same candidate sets?</li>
+        <li>What happens downstream, on a catalogue full of items the model has never seen?</li>
+    </ol>
+
+    <h2>TL;DR</h2>
+    <div class="key-finding">
+        <ul style="margin:0">
+            <li><strong>Encode the user once.</strong> A block attention mask with position ids restarting after the state computes
+            <em>exactly</em> the Open-Jev pointwise function (verified in fp32; same metrics in bf16) while processing
+            <strong>10&times; fewer tokens at K=20 and 16&times; at K=100</strong>, and this holds during training too.</li>
+            <li><strong>Letting candidates compete did not help.</strong> A kev-style decide token that sees all candidates learns
+            real weights and flips 8% of top-1 choices, but quality is unchanged with random negatives and 0.6 points lower with
+            hard ones.</li>
+            <li><strong>In-domain, an ID model is still hard to beat.</strong> SASRec beats Qwen3-1.7B by 1.9 points HR@1
+            (0.623 vs 0.604, p=0.002) and ties Qwen3-8B (0.633, +1.0, p=0.07), partly by leaning on popularity. With
+            popularity-sampled negatives the 1.7B LLM wins by 3.8 points (0.486 vs 0.448, p=1.5e-9).</li>
+            <li><strong>Downstream, text transfers and IDs do not.</strong> Trained only on ML-1M and applied unchanged to
+            <code>ml-latest-small</code>, the scorer reaches 0.523 (1.7B) / 0.593 (8B) HR@1 against 0.380 for a SASRec trained on
+            the target data, and <strong>0.555 vs 0.253 on movies released after ML-1M was collected</strong> (8B).</li>
+        </ul>
+    </div>
+
+    <h2>The task</h2>
+    <p>Each MovieLens user is one decision request. The <strong>state</strong> is the user's last 20 ratings rendered as text
+    (<code>- Heat (1995) [Action, Crime, Thriller]: 4</code>). The <strong>question</strong> is a Choice over K=20 movies: the
+    one the user actually rated next and 19 random movies they never rated. We use leave-one-out splits (last interaction =
+    test, second last = validation) and fixed seeds, so every model is scored on identical candidate sets. Training uses 8
+    random earlier positions per user, about 48k decisions per epoch.</p>
+    <p>Every LLM variant uses the same readout. A scalar head on the last hidden state of each candidate is initialised to
+    <code>W_yes &minus; W_no</code> from the pretrained unembedding, so at step 0 it is the zero-shot
+    "Answer Yes or No:" margin. We train LoRA (r=16) with softmax cross-entropy over the K candidates plus 0.1&times;Brier,
+    then fit one temperature on validation.</p>
+
+    <h2>Three ways to share one state</h2>
+    <div class="table-wrap">
+    <table>
+        <tr><th>mode</th><th>layout</th><th>state encoded</th><th>candidates interact</th></tr>
+        <tr><td><code>pointwise</code></td><td>Open-Jev: one sequence per (state, candidate), plain causal attention</td><td>K times</td><td>no</td></tr>
+        <tr><td><code>isolated</code></td><td>one sequence per request; block mask, position ids restart after the state</td><td>once</td><td>no</td></tr>
+        <tr><td><code>listwise</code></td><td><code>isolated</code> + a decide segment that attends to everything; low-rank bilinear term between decide and each candidate, zero-initialised</td><td>once</td><td>via decide</td></tr>
+    </table>
+    </div>
+    <img src="jevrec_mask.png" alt="Block attention masks for isolated and listwise scoring">
+    <p class="caption">The masks exactly as <code>jevrec.model.block_mask</code> builds them for a 4-token state and three
+    2-token candidates. Every candidate restarts at position 4, so candidate <em>i</em> sees the same keys at the same
+    positions as it would alone. That makes <code>isolated</code> the pointwise function, computed with one pass over the
+    state.</p>
+    <p>Two practical notes. The mask trick needs a pure-attention backbone: linear-attention or SSM layers (for example Qwen3.5's
+    Gated DeltaNet) ignore attention masks, which is why Open-Jev and kev fall back to one row per candidate with a forked
+    state cache on those models. And because the equivalence holds for the training forward pass too, you get the saving
+    during training, not only at inference.</p>
+
+    <h2>Results on MovieLens-1M</h2>
+    <p>Qwen3-1.7B and Qwen3-8B, 1 epoch each, 2&times;B200 per run (about 23 and 75 minutes). 6,040 test users.
+    "Auto @95%" is the share of requests you could decide automatically at 95% precision by thresholding confidence:
+    the operating point calibrated decisions are for.</p>
+    <div class="table-wrap">
+    <table>
+        <tr><th>model</th><th>HR@1</th><th>HR@5</th><th>NDCG@10</th><th>NLL</th><th>ECE</th><th>auto @95%</th><th>tokens / request</th></tr>
+        <tr><td>popularity</td><td>0.274</td><td>0.695</td><td>0.558</td><td>2.33</td><td>0.025</td><td>0.0%</td><td>&ndash;</td></tr>
+        <tr><td>SASRec (item IDs)</td><td>0.623</td><td>0.899</td><td>0.799</td><td>1.25</td><td><strong>0.013</strong></td><td>22.9%</td><td>&ndash;</td></tr>
+        <tr><td>zero-shot LLM (isolated)</td><td>0.087</td><td>0.365</td><td>0.304</td><td>2.95</td><td>0.005</td><td>0.0%</td><td>910</td></tr>
+        <tr><td>Jev-style, isolated</td><td>0.604</td><td>0.894</td><td>0.785</td><td>1.29</td><td>0.023</td><td>20.5%</td><td><strong>910</strong></td></tr>
+        <tr><td>same weights, pointwise</td><td>0.605</td><td>0.894</td><td>0.786</td><td>1.29</td><td>0.023</td><td>20.6%</td><td>9,124</td></tr>
+        <tr><td>Jev-style, listwise</td><td>0.604</td><td>0.894</td><td>0.785</td><td>1.29</td><td>0.026</td><td>18.6%</td><td>923</td></tr>
+        <tr><td><em>8B</em> zero-shot (isolated)</td><td>0.282</td><td>0.670</td><td>0.544</td><td>2.35</td><td>0.018</td><td>0.4%</td><td>910</td></tr>
+        <tr><td><em>8B</em> Jev-style, isolated</td><td><strong>0.633</strong></td><td><strong>0.906</strong></td><td><strong>0.804</strong></td><td><strong>1.19</strong></td><td>0.022</td><td><strong>26.9%</strong></td><td>910</td></tr>
+        <tr><td><em>8B</em> Jev-style, listwise</td><td>0.633</td><td>0.906</td><td>0.804</td><td>1.19</td><td>0.026</td><td>26.0%</td><td>923</td></tr>
+    </table>
+    </div>
+    <p class="caption">Rows without a tag are Qwen3-1.7B. Paired against SASRec on the same requests (McNemar; bootstrap 95% CI of
+    the HR@1 difference): 1.7B &minus;1.9 points, p=0.002, CI [&minus;3.0, &minus;0.8]; 8B +1.0 points, p=0.07,
+    CI [&minus;0.05, +2.1]. So 8B ties SASRec, it does not beat it.</p>
+    <p>Three observations.</p>
+    <p><strong>Pointwise and isolated are the same model.</strong> Loading the isolated weights into the pointwise layout gives the
+    same numbers to bf16 noise (0.6048 vs 0.6043), for ten times the tokens. The zero-shot rows agree too (0.084 vs 0.087).</p>
+    <p><strong>Zero-shot quality depends heavily on scale.</strong> The 1.7B Yes/No readout is close to useless (0.087 vs 0.05
+    random), while 8B already reaches 0.282, above popularity. One epoch of LoRA on 48k decisions then closes the gap to SASRec
+    for both. The 8B model is also the better decider: at 95% precision it can automate 27% of requests, against 23% for
+    SASRec.</p>
+    <p><strong>The listwise head is not idle but does not help.</strong> Its query projection grows from zero to norm 3.8 and it
+    changes 8% of top-1 decisions, yet average HR@1, NLL and ECE are unchanged. With random negatives, "is this the next movie?"
+    can be answered one candidate at a time. The natural objection is that the negatives are too easy, so we tested that next.</p>
+
+    <img src="jevrec_popularity.png" alt="HR@1 by training popularity of the positive movie">
+    <p class="caption">Where the gap to SASRec comes from. The LLM wins on the rarest positives (&lt;50 training interactions,
+    0.264 vs 0.245) and on the head (&ge;500), and loses clearly in the 50&ndash;500 band, where ID embeddings have enough data
+    to learn co-watch structure that titles and genres do not express.</p>
+
+    <img src="jevrec_reliability.png" alt="Reliability diagram" style="max-width: 420px">
+    <p class="caption">After temperature scaling (T&asymp;1.2 for the LLM; raw ECE 0.071 &rarr; 0.023) both model families
+    sit on the diagonal. Calibration is cheap for both, so it is no reason to prefer one over the other.</p>
+
+    <h2>Harder negatives: removing the popularity shortcut</h2>
+    <p>Uniform negatives are mostly obscure movies, so "pick the popular one" already gets 0.27 HR@1. We reran the 1.7B setup
+    with the 19 negatives sampled in proportion to popularity (median negative popularity 562 instead of 107), for training
+    and test alike.</p>
+    <div class="table-wrap">
+    <table>
+        <tr><th>model</th><th>HR@1</th><th>HR@5</th><th>NDCG@10</th><th>NLL</th><th>ECE</th><th>auto @95%</th></tr>
+        <tr><td>popularity</td><td>0.068</td><td>0.294</td><td>0.253</td><td>3.00</td><td>0.015</td><td>0.0%</td></tr>
+        <tr><td>SASRec</td><td>0.448</td><td>0.795</td><td>0.671</td><td>1.84</td><td>0.026</td><td>5.8%</td></tr>
+        <tr><td>zero-shot LLM</td><td>0.084</td><td>0.341</td><td>0.296</td><td>2.96</td><td>0.005</td><td>0.0%</td></tr>
+        <tr><td><strong>Jev-style, isolated</strong></td><td><strong>0.486</strong></td><td>0.806</td><td><strong>0.693</strong></td><td>1.69</td><td><strong>0.017</strong></td><td>11.4%</td></tr>
+        <tr><td>Jev-style, listwise</td><td>0.480</td><td><strong>0.806</strong></td><td>0.693</td><td><strong>1.68</strong></td><td>0.019</td><td><strong>11.6%</strong></td></tr>
+    </table>
+    </div>
+    <img src="jevrec_negatives.png" alt="Uniform vs popularity-sampled negatives">
+    <p class="caption">Popularity collapses to chance and SASRec loses 18 points; the LLM scorer loses 12 and now leads by 3.8
+    (McNemar p=1.5e-9, CI [+2.5, +5.0]). It also doubles the share of requests that can be automated at 95% precision.</p>
+    <p>Two conclusions. Part of SASRec's lead with uniform negatives was popularity, which ID embeddings encode very
+    efficiently. And even when negatives are plausible, the listwise head does not help: it is 0.6 points <em>worse</em> at
+    top-1 (p=0.03), with a hair better NLL. Scoring candidates independently against the user is enough here.</p>
+
+    <h2>Downstream: a catalogue the model has never seen</h2>
+    <p>ML-1M stops in 2000. <code>ml-latest-small</code> is a 2018 MovieLens snapshot (610 users, 9.7k movies) with the same
+    movie ids, so we can split its test positives into movies that exist in ML-1M and movies that did not exist yet. The
+    LLM scorers are trained <em>only</em> on ML-1M and run unchanged. Popularity and SASRec get the easier deal: they are
+    trained on <code>ml-latest-small</code> itself.</p>
+    <div class="table-wrap">
+    <table>
+        <tr><th>model</th><th>all (n=610)</th><th>movie in ML-1M (n=365)</th><th>new since ML-1M (n=245)</th></tr>
+        <tr><td>popularity (trained on target)</td><td>0.385</td><td>0.466</td><td>0.265</td></tr>
+        <tr><td>SASRec (trained on target)</td><td>0.380</td><td>0.466</td><td>0.253</td></tr>
+        <tr><td>zero-shot LLM</td><td>0.070</td><td>0.047</td><td>0.106</td></tr>
+        <tr><td><strong>Jev-style isolated (ML-1M only)</strong></td><td><strong>0.523</strong></td><td><strong>0.564</strong></td><td><strong>0.461</strong></td></tr>
+        <tr><td>Jev-style listwise (ML-1M only)</td><td>0.523</td><td>0.564</td><td>0.461</td></tr>
+        <tr><td><em>8B</em> zero-shot</td><td>0.361</td><td>0.381</td><td>0.331</td></tr>
+        <tr><td><strong><em>8B</em> Jev-style isolated (ML-1M only)</strong></td><td><strong>0.593</strong></td><td><strong>0.619</strong></td><td><strong>0.555</strong></td></tr>
+        <tr><td><em>8B</em> Jev-style listwise (ML-1M only)</td><td>0.585</td><td>0.608</td><td>0.551</td></tr>
+    </table>
+    </div>
+    <p class="caption">Rows without a tag are Qwen3-1.7B. Gains over SASRec: McNemar p=3e-8 (1.7B) and p=6e-16 (8B).</p>
+    <img src="jevrec_transfer.png" alt="Transfer to ml-latest-small">
+    <div class="result">What the LLM learned on ML-1M is a <em>policy over text</em>: how a rating history of titles and genres
+    predicts the next title. That policy carries to a new catalogue and to movies released years later. An ID model has
+    nothing to carry: a new catalogue is a cold start by construction, and with only 610 users the in-domain SASRec barely
+    beats popularity. The 8B model shows how much of this comes from pretraining: its zero-shot readout (0.361) is already
+    almost as good as the in-domain SASRec (0.380), and one epoch of ML-1M training adds 23 points on top.</div>
+    <img src="jevrec_scale.png" alt="Backbone scale: in-domain vs transfer">
+    <p class="caption">Moving from 1.7B to 8B adds 3 points in-domain and 7 points in transfer. The zero-shot readout gains
+    even more (0.09 &rarr; 0.28 in-domain).</p>
+
+    <h2>Cost</h2>
+    <img src="jevrec_latency.png" alt="Latency and tokens vs K">
+    <p class="caption">One request, batch 1, B200, Hugging Face eager + SDPA. The three modes share one backbone and are timed
+    interleaved over 60 requests. We plot the minimum because the box is shared and requests stall intermittently by ~50 ms
+    under host load (the medians are in the repo). Tokens grow as K&middot;(state + candidate) for pointwise and as
+    state + K&middot;candidate for the masked modes. The masked modes stay at the ~21 ms launch floor of a 28-layer eager
+    model up to K=50. Pointwise reaches 57 ms at K=20 and 286 ms at K=100, against 22 and 27 ms.</p>
+    <p>In recommender terms this is the familiar split between user-side and item-side computation. The masked layout computes
+    the user once per request and each item once, the way a production ranker reuses user features across candidates, while
+    keeping full cross-attention between each item and the user.</p>
+
+    <h2>Takeaways</h2>
+    <ul>
+        <li>If you build a Jev-style decision model on an attention backbone, <strong>use the block mask</strong>. It is the same
+        function as the pointwise layout, and it cuts training and inference cost roughly by a factor of K for long states.</li>
+        <li>As an in-domain ranker on a mature catalogue, an LLM scorer is <strong>competitive with, not better than</strong>,
+        SASRec: 1.7B is 2 points behind, 8B ties. The case for it is elsewhere: calibrated typed outputs, no feature pipeline, and above all
+        <strong>transfer to new items and new catalogues</strong>, where ID models start from zero.</li>
+        <li>Listwise interaction is cheap (a zero-initialised bilinear term, 13 extra tokens) but did not pay off with either
+        uniform or popularity-sampled negatives. Scoring each candidate against the user is enough here.</li>
+    </ul>
+
+    <div class="warning"><strong>Caveats.</strong> Sampled-negative evaluation with K=20 is easier than full-catalogue ranking,
+    but it is the same for all models within each protocol. One seed per configuration. This is an independent study inspired by Jev. It does not use
+    TypeSafe's model, data or RLCD training.</div>
+
+    <h2>Reproduce</h2>
+<pre>git clone https://github.com/wdlctc/jev-recommend && cd jev-recommend
+pip install -e . && python -m pytest -q tests      # mask equivalence, CPU
+GA=0,1 GB=2,3 bash scripts/run_all.sh              # train, zero-shot, baselines, latency
+bash scripts/run_downstream.sh                     # ml-latest-small transfer
+python scripts/analyze.py runs/q17b figures        # slices + figures</pre>
+</body>
+</html>
