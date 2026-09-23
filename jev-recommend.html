@@ -85,6 +85,7 @@
     <div class="links">
         <a href="https://github.com/wdlctc/jev-recommend">Code</a>
         <a href="https://github.com/wdlctc/jev-recommend/releases">Weights &amp; logits</a>
+        <a href="jev-decision-desk.html">Interactive demo</a>
     </div>
 
     <p>TypeSafe's <strong>Jev</strong> is an LLM that never writes text: it reads a state, answers typed questions
@@ -112,7 +113,7 @@
             popularity-sampled negatives the 1.7B LLM wins by 3.8 points (0.486 vs 0.448, p=1.5e-9).</li>
             <li><strong>Downstream, text transfers and IDs do not.</strong> Trained only on ML-1M and applied unchanged to
             <code>ml-latest-small</code>, the scorer reaches 0.523 (1.7B) / 0.593 (8B) HR@1 against 0.380 for a SASRec trained on
-            the target data, and <strong>0.555 vs 0.253 on movies released after ML-1M was collected</strong> (8B).</li>
+            the target data, and <strong>0.555 vs 0.253 on movies that are not in ML-1M at all</strong> (8B; 93% of them released after it was collected).</li>
         </ul>
     </div>
 
@@ -210,12 +211,12 @@
 
     <h2>Downstream: a catalogue the model has never seen</h2>
     <p>ML-1M stops in 2000. <code>ml-latest-small</code> is a 2018 MovieLens snapshot (610 users, 9.7k movies) with the same
-    movie ids, so we can split its test positives into movies that exist in ML-1M and movies that did not exist yet. The
+    movie ids, so we can split its test positives into movies that exist in ML-1M and 245 that do not (228 of those were released in 2000 or later; the rest are older titles ML-1M never included). The
     LLM scorers are trained <em>only</em> on ML-1M and run unchanged. Popularity and SASRec get the easier deal: they are
     trained on <code>ml-latest-small</code> itself.</p>
     <div class="table-wrap">
     <table>
-        <tr><th>model</th><th>all (n=610)</th><th>movie in ML-1M (n=365)</th><th>new since ML-1M (n=245)</th></tr>
+        <tr><th>model</th><th>all (n=610)</th><th>movie in ML-1M (n=365)</th><th>not in ML-1M (n=245)</th></tr>
         <tr><td>popularity (trained on target)</td><td>0.385</td><td>0.466</td><td>0.265</td></tr>
         <tr><td>SASRec (trained on target)</td><td>0.380</td><td>0.466</td><td>0.253</td></tr>
         <tr><td>zero-shot LLM</td><td>0.070</td><td>0.047</td><td>0.106</td></tr>
@@ -229,7 +230,7 @@
     <p class="caption">Rows without a tag are Qwen3-1.7B. Gains over SASRec: McNemar p=3e-8 (1.7B) and p=6e-16 (8B).</p>
     <img src="jevrec_transfer.png" alt="Transfer to ml-latest-small">
     <div class="result">What the LLM learned on ML-1M is a <em>policy over text</em>: how a rating history of titles and genres
-    predicts the next title. That policy carries to a new catalogue and to movies released years later. An ID model has
+    predicts the next title. That policy carries to a new catalogue and to movies it has never seen, most of them released years later. An ID model has
     nothing to carry: a new catalogue is a cold start by construction, and with only 610 users the in-domain SASRec barely
     beats popularity. The 8B model shows how much of this comes from pretraining: its zero-shot readout (0.361) is already
     almost as good as the in-domain SASRec (0.380), and one epoch of ML-1M training adds 23 points on top.</div>
