@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Decided Before the Last Layer: Early Exit for LLM Decision Models</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 { color: #2c3e50; }
+        h1 { font-size: 1.8em; }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .result {
+            background-color: #e6f3ff;
+            border-left: 4px solid #3498db;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .key-finding {
+            background-color: #eafaf1;
+            border-left: 4px solid #2ecc71;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .warning {
+            background-color: #fdf2e9;
+            border-left: 4px solid #e67e22;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+            font-size: 0.92em;
+        }
+        .table-wrap { overflow-x: auto; }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 6px 10px;
+            text-align: left;
+        }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        tr:nth-child(even) { background-color: #fafafa; }
+        img { max-width: 100%; height: auto; margin: 15px 0; }
+        .caption { color: #666; font-size: 0.9em; margin-top: -8px; }
+        .authors { color: #666; font-style: italic; margin-bottom: 20px; }
+        .links a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #0066cc;
+            font-weight: bold;
+        }
+        .links { margin-bottom: 25px; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html">About</a>
+        <a href="research.html">Research</a>
+        <a href="blogs.html">Blogs</a>
+    </nav>
+
+    <h1>Decided Before the Last Layer: Early Exit for LLM Decision Models</h1>
+
+    <p class="authors">Cheng Luo &mdash; September 2026</p>
+
+    <div class="links">
+        <a href="https://github.com/wdlctc/jev-exit">Code</a>
+        <a href="https://github.com/wdlctc/jev-exit/blob/main/paper/main.pdf">Paper draft</a>
+    </div>
+
+    <p>A Jev-style <strong>decision model</strong> never writes text. It reads a state, answers a typed question (here a
+    <em>Choice</em> among K options) and returns a calibrated probability for every option in one forward pass. The
+    probabilities are meant to be acted on: automate the decisions that are confident enough, escalate the rest.</p>
+
+    <p>If the answer is one decision, does the model need all of its layers to reach it? The idea here is simple:
+    <strong>put a decision head on every layer</strong>, so every layer emits its own distribution over the options, and let a
+    request leave the network <strong>when the decision is settled</strong>: either one read is very confident, or the top
+    option has stayed the same for several layers in a row. Because the unit of work is one decision over all options, a
+    finished request just leaves the batch. There is no half-built KV cache for later tokens, which is what makes early exit
+    painful in text generation.</p>
+
+    <h2>TL;DR</h2>
+    <div class="key-finding">
+        <ul style="margin:0">
+            <li><strong>It works, and it is cheap to add.</strong> Heads fitted on a frozen, already-trained decision model
+            (0.06M parameters, about 8 minutes) let the 8B model run <strong>57% of its layers for &minus;0.3 accuracy
+            points</strong> (0.630 vs 0.633) and the 1.7B model 59% for &minus;0.65. Measured on a B200:
+            <strong>1.54&ndash;1.71&times; faster</strong> at batch 1, 16 and 64.</li>
+            <li><strong>The model has decided by ~60% depth.</strong> In every setting (1.7B and 8B, easy and hard distractors,
+            in-distribution and under shift), per-layer decision accuracy is flat from about 60% of the depth on.</li>
+            <li><strong>"It stopped changing its mind" is the signal, not "it is sure".</strong> In a 20-way choice the top
+            probability is rarely high; confidence-only exits reach 1.2&ndash;1.3&times;, agreement-based exits 1.6&ndash;1.8&times;.</li>
+            <li><strong>But adaptivity itself buys little.</strong> A static cut at the right layer is within noise of the
+            adaptive rule in 6 of 8 paired comparisons. Most of the speedup is a property of the network, not of the request.</li>
+            <li><strong>Under distribution shift, stopping early is <em>better</em>.</strong> With rules applied unchanged to a
+            shifted set of states and options, the 8B model's early exits beat its full network by 2 points (0.613 vs 0.593).</li>
+            <li><strong>Two costs:</strong> fewer decisions can be automated at 95% precision, and cuDNN attention can turn the
+            speedup into a slowdown.</li>
+        </ul>
+    </div>
+
+    <h2>Setup</h2>
+    <p>The decision task is a <strong>20-way next-choice question</strong>: given the text of a person's 20 most recent choices
+    (with ratings), which of 20 options do they pick next? One option is their actual next choice; the other 19 are
+    distractors they never picked, drawn at random (<em>easy</em>) or in proportion to how often everyone picks them
+    (<em>hard</em>, which removes the "just pick the popular one" shortcut). We build it from MovieLens-1M because it gives
+    many independent requests with a ground-truth answer (6,040 test decisions) and a natural distribution shift in a later
+    snapshot. The decision models are Qwen3-1.7B (28 layers) and Qwen3-8B (36 layers), fine-tuned with LoRA as Jev-style
+    choice models; the metric is top-1 decision accuracy (Acc@1), plus calibration (ECE).</p>
+    <p>For every layer <code>l</code> we add a head <code>w_l&middot;norm(h_l) + b_l</code> on each option's last token, read
+    through the model's own final RMSNorm (a task-specific tuned lens), plus one temperature per layer fitted on validation.
+    The exit rule is</p>
+<pre>exit at layer l  if  p_max(l) &ge; &tau;_hi                                 # one very confident read
+                 or  top option unchanged for m layers and p_max(l) &ge; &tau;_lo   # it stopped moving</pre>
+    <p>which is the classic confidence exit (BranchyNet, DeeBERT) or'ed with the patience exit of PABEE. We search
+    &tau;, m and the earliest allowed exit layer on validation, keep the cheapest rule within an accuracy budget, and score it
+    once on test. Two ways to get the heads:</p>
+    <ul>
+        <li><strong>Retrofit</strong>: freeze the trained decision model and fit only the heads. The full network is unchanged.</li>
+        <li><strong>Joint</strong>: retrain LoRA and all heads together with deep supervision.</li>
+    </ul>
+
+    <h2>Where the decision is made</h2>
+    <img src="jevexit_depth.png" alt="Decision accuracy per layer relative to the last layer">
+    <p class="caption">Acc@1 of each layer's head divided by the last layer's. Every curve flattens between 55% and 65% of the
+    depth (shaded). Dotted: heads applied unchanged under distribution shift.</p>
+    <p>The curves rise through the middle of the network and then stop. The 1.7B model reaches 0.600 after 18 of 28 layers
+    against 0.604 for all 28; the 8B model 0.626 after 21 of 36 against 0.633; with hard distractors it is 0.482 after 18
+    layers against 0.487. Joint training (light blue) pulls the early layers up a lot (0.51 vs 0.39 after 8 layers) but does
+    not move the point where the curve flattens, and it costs 0.9 points at the last layer. So the retrofit heads are the
+    recipe: minutes of training, and the original model stays available bit for bit.</p>
+
+    <h2>Which exit rule</h2>
+    <img src="jevexit_frontier.png" alt="Accuracy vs layers run for each rule family">
+    <p class="caption">Test Acc@1 against the mean fraction of layers run, one point per validation budget. Star: full network.</p>
+
+    <div class="table-wrap">
+    <table>
+        <tr><th>model</th><th>rule (budget)</th><th>layers run</th><th>speedup</th><th>test Acc@1</th><th>&Delta; vs full [95% CI]</th></tr>
+        <tr><td>1.7B</td><td>full network</td><td>100%</td><td>1.00&times;</td><td>0.604</td><td>&ndash;</td></tr>
+        <tr><td></td><td>confidence only (0.25)</td><td>78%</td><td>1.29&times;</td><td>0.603</td><td>&minus;0.13 [&minus;0.26, +0.03]</td></tr>
+        <tr><td></td><td>static cut (0.25)</td><td>64%</td><td>1.56&times;</td><td>0.600</td><td>&minus;0.46 [&minus;1.06, +0.15]</td></tr>
+        <tr><td></td><td><strong>confidence or agreement (0.25)</strong></td><td>59%</td><td><strong>1.69&times;</strong></td><td>0.598</td><td>&minus;0.65 [&minus;1.21, &minus;0.07]</td></tr>
+        <tr><td>8B</td><td>full network</td><td>100%</td><td>1.00&times;</td><td>0.633</td><td>&ndash;</td></tr>
+        <tr><td></td><td>confidence only (0.25)</td><td>75%</td><td>1.33&times;</td><td>0.632</td><td>&minus;0.08 [&minus;0.23, +0.07]</td></tr>
+        <tr><td></td><td>static cut (0.25)</td><td>58%</td><td>1.71&times;</td><td>0.626</td><td>&minus;0.76 [&minus;1.29, &minus;0.18]</td></tr>
+        <tr><td></td><td><strong>confidence or agreement (0.25)</strong></td><td>57%</td><td><strong>1.74&times;</strong></td><td><strong>0.630</strong></td><td>&minus;0.31 [&minus;0.79, +0.22]</td></tr>
+    </table>
+    </div>
+    <p>Budgets are the accuracy drop (in points) allowed on validation; the test drop is usually a bit larger, the ordinary
+    valid/test gap. Calibration survives: ECE stays at 0.016&ndash;0.023 because each exit layer has its own temperature.</p>
+
+    <div class="key-finding"><strong>Agreement beats confidence.</strong> A 20-way decision whose best case is 60% top-1
+    accuracy is almost never <em>sure</em>: the calibrated top probability of a correct decision is usually well under any
+    safe threshold, so confidence exits hardly fire. Whether the model has <em>stopped changing its mind</em> does not need
+    certainty, and the rules that win use it with m = 2 or 3. We expect the same for any many-way decision whose achievable
+    accuracy is well below one.</div>
+
+    <h2>How much is adaptivity worth?</h2>
+    <p>This is where the story gets less exciting. Compare each adaptive rule with a static cut that runs at least as many
+    layers, on the same requests:</p>
+    <div class="table-wrap">
+    <table>
+        <tr><th>run (budget)</th><th>adaptive: layers / Acc@1</th><th>static: layers / Acc@1</th><th>difference [95% CI]</th></tr>
+        <tr><td>1.7B (0.25)</td><td>16.6 / 0.598</td><td>17 / 0.595</td><td>+0.31 [&minus;0.05, +0.68]</td></tr>
+        <tr><td>1.7B (0.5)</td><td>15.9 / 0.593</td><td>16 / 0.588</td><td>+0.46 [+0.10, +0.83]</td></tr>
+        <tr><td>8B (0.25)</td><td>20.7 / 0.630</td><td>21 / 0.626</td><td>+0.46 [+0.10, +0.84]</td></tr>
+        <tr><td>8B (0.5)</td><td>20.0 / 0.625</td><td>21 / 0.626</td><td>&minus;0.12 [&minus;0.58, +0.31]</td></tr>
+        <tr><td>1.7B hard distractors (0.25)</td><td>17.1 / 0.480</td><td>18 / 0.482</td><td>&minus;0.22 [&minus;0.63, +0.18]</td></tr>
+        <tr><td>1.7B joint (0.25)</td><td>16.4 / 0.594</td><td>17 / 0.595</td><td>&minus;0.12 [&minus;0.36, +0.13]</td></tr>
+    </table>
+    </div>
+    <img src="jevexit_exit_hist.png" alt="Histogram of exit layers">
+    <p class="caption">Where requests exit under the 0.25-point rules. Almost everything leaves in a 2&ndash;3 layer band.</p>
+    <p>The histogram explains it. The chosen rules exit 72% (1.7B) and 82% (8B) of requests within two or three layers of
+    the earliest allowed exit, with a thin tail of late ones. The rule mostly learns <em>where the network is done</em>, and only
+    then does a little per request. Per-request difficulty does exist: an oracle that stops each request at the first layer
+    after which its decision never changes would run 2.0&ndash;2.9&times; fewer layers at no loss. Simple rules on the readout
+    distribution do not find that room. If you are writing an early-exit paper for decision workloads, report the static cut.</p>
+
+    <h2>Does it survive distribution shift?</h2>
+    <p>We took everything (model, heads, exit rule and temperatures) and applied it unchanged to a later snapshot of the
+    task, where 40% of the correct options never occur in the training data (610 requests).</p>
+    <div class="table-wrap">
+    <table>
+        <tr><th>model</th><th>rule, unchanged</th><th>layers run</th><th>test Acc@1</th><th>&Delta; vs full [95% CI]</th></tr>
+        <tr><td>1.7B</td><td>full network</td><td>100%</td><td>0.525</td><td>&ndash;</td></tr>
+        <tr><td></td><td>confidence or agreement (0.25)</td><td>61%</td><td>0.523</td><td>&minus;0.16 [&minus;1.97, +1.64]</td></tr>
+        <tr><td>8B</td><td>full network</td><td>100%</td><td>0.593</td><td>&ndash;</td></tr>
+        <tr><td></td><td>confidence or agreement (0.25)</td><td>58%</td><td><strong>0.613</strong></td><td><strong>+1.97 [+0.16, +3.77]</strong></td></tr>
+    </table>
+    </div>
+    <p>The exit costs carry over. And for the 8B model, every one of layers 20&ndash;35 beats layer 36 under the shift
+    (dotted red in the first figure): the last layers have specialised to the training distribution, and stopping early
+    avoids that ("overthinking", in the words of Shallow-Deep Networks). With 610 requests this is a hint rather than a
+    result, but a nice one: the cheaper decision is also the more general one.</p>
+
+    <h2>Real speed, and two costs</h2>
+    <img src="jevexit_wallclock.png" alt="Wall-clock speedup at batch 1, 16, 64">
+    <p class="caption">Median latency ratio on one B200, bf16, merged LoRA, same batches for both paths.</p>
+    <p>Exits are real: after each checked layer, finished rows are dropped from the hidden states, mask, positions and rotary
+    tables. Without any exits the layer-by-layer loop is as fast as the stock forward pass, so the speedup tracks the layer count,
+    minus one host synchronisation per checked layer (which is why batch 1 gets 1.54&times; against 1.77&times; in layers).</p>
+
+    <div class="warning"><strong>Cost 1: cuDNN attention.</strong> The first benchmark showed early exit <em>slower</em> than
+    the full network at batch 16 (0.74&times;). Profiling found the reason: cuDNN's scaled-dot-product attention builds an execution plan
+    for every new (batch, length) shape, and batch compaction creates a new batch size at almost every layer. Batch 1 never
+    changes shape and batch 64 amortises it. Disabling cuDNN SDPA (the full network is not slower without it here) or
+    bucketing batch sizes fixes it.</div>
+
+    <div class="warning"><strong>Cost 2: fewer decisions you can automate.</strong> The point of calibrated decisions is to
+    automate the confident ones. At 95% precision, the share of requests we can decide automatically falls from 20.4% to 15.6%
+    (1.7B) and from 26.8% to 17.7% (8B) under early exit; a static cut keeps 20.6% / 24.3%. The requests that exit early are
+    the ones the full network would be surest about, and they leave with an intermediate layer's flatter distribution. If that
+    operating point matters, exit on agreement but take the confidence from a later layer, or use a static cut.</div>
+
+    <h2>Takeaways</h2>
+    <ul>
+        <li>A fine-tuned LLM decision model has made its choice by about 60% of its depth. Per-layer heads fitted after training
+        show where, in minutes, without touching the model.</li>
+        <li>Request-level exit with batch compaction turns that into a 1.5&ndash;1.7&times; real speedup for a few tenths of a
+        point of accuracy, in-distribution and under shift.</li>
+        <li>Most of the gain is available to a static cut. "The decision stopped moving" is the only signal that beats it, and
+        only by about half a point; the oracle says there is 2&ndash;3&times; on the table for a smarter rule.</li>
+    </ul>
+
+    <div class="warning"><strong>Caveats.</strong> One decision task (20-way choice with sampled distractors), one model family
+    (Qwen3), one seed per configuration, and 610 requests for the shift experiment. Other question types (scores, yes/no),
+    many more options, or longer states may settle at a different depth. This is an independent study inspired by Jev. It
+    does not use TypeSafe's model, data or training.</div>
+
+    <h2>Reproduce</h2>
+<pre>git clone https://github.com/wdlctc/jev-exit && cd jev-exit
+pip install -e ".[dev]" && python -m pytest -q tests     # exit == offline replay, CPU
+bash scripts/run.sh                                        # decision model, heads, rules, shift, wall clock
+python scripts/plot.py results figures</pre>
+</body>
+</html>
